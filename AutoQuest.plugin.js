@@ -1,7 +1,7 @@
 /**
  * @name AutoQuest
  * @description Complete Discord quests safely in the background with cooldowns and rate limiting.
- * @version 1.0.1
+ * @version 1.0.2
  * @author Kava4
  * @authorLink https://github.com/Kava4
  * @source https://github.com/Kava4/AutoQuest
@@ -10,6 +10,9 @@
 
 const config = {
     changelog: [
+        { title: "UI", type: "improved", items: [
+            "Removed custom quest buttons from title bar and settings bar."
+        ] },
         { title: "Bug Fix", type: "fixed", items: [
             "Fixed duplicate quest buttons and badges appearing on every UI re-render."
         ] },
@@ -43,9 +46,7 @@ const config = {
         },
         {
             type: "category", id: "uiElements", name: "UI Elements", collapsible: true, shown: false, settings: [
-                { type: "switch", id: "showQuestsButtonTitleBar", name: "Show Quests Title Bar", note: "Whether to show the quests button in the title bar.", value: true },
-                { type: "switch", id: "showQuestsButtonSettingsBar", name: "Show Quests Settings Bar", note: "Whether to show the quests button in the settings bar.", value: true },
-                { type: "switch", id: "showQuestsButtonBadges", name: "Show Quests Badges", note: "Whether to show badges on the quests button.", value: true },
+                { type: "switch", id: "showQuestsButtonBadges", name: "Show Quests Badges", note: "Whether to show badges on the sidebar Quests button.", value: true },
             ]
         },
         {
@@ -89,7 +90,7 @@ function randomIntBetween(min, max) {
     return Math.floor(randomBetween(min, max + 1));
 }
 
-const { Webpack, Data, UI, Patcher, DOM, React, ReactUtils, Components, Utils, Plugins, Logger } = BdApi;
+const { Webpack, Data, UI, Patcher, DOM, React, Components, Utils, Plugins, Logger } = BdApi;
 const { Filters } = Webpack;
 const { Tooltip, Flex } = Components;
 
@@ -102,49 +103,11 @@ let GuildChannelStore;
 let RestApi;
 let QuestApplyAction;
 let QuestLocationMap;
-let QuestIcon;
-let navigateToQuestHomeObj;
 let CountBadge;
-let windowArea;
-let SettingsBarModule;
-let trailingModule;
-let SettingsBarButton;
-let TopBarButtonModule;
-let navigateToQuestHome;
-let TopBarButtonKey;
 let QuestButtonWithKey;
 let SortingFilterWithKey;
-let trailing = "";
 let modulesLoaded = false;
 let modulesReady = false;
-
-function resolveNavigateToQuestHome() {
-    if (typeof navigateToQuestHomeObj?.navigateToQuestHome === "function") {
-        return navigateToQuestHomeObj.navigateToQuestHome;
-    }
-
-    try {
-        const routerModule = Webpack.getModule(m => {
-            const exports = m?.exports ?? m?.default ?? m;
-            if (!exports || typeof exports !== "object") return false;
-            return Object.values(exports).some(prop =>
-                typeof prop === "function" && prop.toString().includes("transitionTo -")
-            );
-        }, { searchExports: true });
-
-        const transitionTo = routerModule && Object.values(routerModule.exports ?? routerModule).find(prop =>
-            typeof prop === "function" && prop.toString().includes("transitionTo -")
-        );
-
-        if (transitionTo) {
-            return () => transitionTo("/quest-home");
-        }
-    } catch (err) {
-        Logger.warn("AutoQuest", "Router fallback unavailable", err);
-    }
-
-    return undefined;
-}
 
 function loadDiscordModules() {
     if (modulesLoaded) return modulesReady;
@@ -153,9 +116,7 @@ function loadDiscordModules() {
     try {
         [DiscordModules, ApplicationStreamingStore, RunningGameStore, QuestsStore,
             ChannelStore, GuildChannelStore, RestApi, QuestApplyAction, QuestLocationMap,
-            QuestIcon, navigateToQuestHomeObj, CountBadge,
-            windowArea, SettingsBarModule, trailingModule,
-            SettingsBarButton, TopBarButtonModule] = Webpack.getBulk(
+            CountBadge] = Webpack.getBulk(
                 { filter: Filters.byKeys("subscribe", "dispatch"), searchExports: true },
                 { filter: Filters.byStoreName("ApplicationStreamingStore") },
                 { filter: Filters.byStoreName("RunningGameStore") },
@@ -165,27 +126,11 @@ function loadDiscordModules() {
                 { filter: m => typeof m === "object" && m.del && m.put, searchExports: true },
                 { filter: Filters.byStrings("type:\"QUESTS_ENROLL_BEGIN\""), searchExports: true },
                 { filter: Filters.byKeys("QUEST_HOME_DESKTOP", "11"), searchExports: true },
-                { filter: Filters.bySource("\"M7.5 21.7a8.95") },
-                { filter: Filters.byKeys("navigateToQuestHome") },
-                { filter: Filters.byStrings("renderBadgeCount", "disableColor"), searchExports: true },
-                { filter: Filters.bySource("windowKey:", "showDivider:") },
-                { filter: Filters.byStrings("handleToggleSelfMute"), searchExports: true },
-                { filter: Filters.byKeys("bar", "trailing") },
-                { filter: Filters.byStrings("keyboardShortcut", "positionKey"), searchExports: true },
-                { filter: Filters.bySource("iconClassName:", "children:", "badgePosition:") }
+                { filter: Filters.byStrings("renderBadgeCount", "disableColor"), searchExports: true }
             ) ?? [];
-
-        navigateToQuestHome = resolveNavigateToQuestHome();
-
-        TopBarButtonKey = TopBarButtonModule ? Object.keys(TopBarButtonModule).find(key => {
-            if (!TopBarButtonModule[key]?.render) return false;
-            const funcStr = TopBarButtonModule[key].render.toString();
-            return funcStr.includes("iconClassName:") && funcStr.includes("children:") && funcStr.includes("badgePosition:");
-        }) : undefined;
 
         QuestButtonWithKey = [...(Webpack.getWithKey(Filters.byStrings("focusProps:", "interactiveClassName:")) ?? [])];
         SortingFilterWithKey = [...(Webpack.getWithKey(Filters.byStrings("selectedSortMethod", "onChange", "radioBarClassName"), { searchExports: true }) ?? [])];
-        trailing = trailingModule?.trailing ?? "";
 
         modulesReady = !!(QuestsStore?.quests && RestApi?.post && DiscordModules?.dispatch);
         if (!modulesReady) {
@@ -199,36 +144,11 @@ function loadDiscordModules() {
     return modulesReady;
 }
 
-function getQuestIcon() {
-    if (!QuestIcon || typeof QuestIcon !== "object") return undefined;
-    const key = Object.keys(QuestIcon)[0];
-    return key ? QuestIcon[key] : undefined;
-}
-
-const AUTOQUEST_TITLE_BAR_KEY = "autoquest-title-bar";
-const AUTOQUEST_SETTINGS_BAR_KEY = "autoquest-settings-bar";
 const AUTOQUEST_BADGES_KEY = "autoquest-quest-badges";
 
 function hasInjectedChild(children, key, className) {
     if (!Array.isArray(children)) return false;
     return children.some(child => child?.key === key || (className && child?.props?.className?.includes?.(className)));
-}
-
-function reRender(selector, patchId) {
-    if (!selector || selector === ".") return;
-    const target = document.querySelector(selector)?.parentElement;
-    if (!target) return;
-    try {
-        const instance = ReactUtils.getOwnerInstance(target);
-        if (!instance?.forceUpdate) return;
-        const unpatch = Patcher.instead(patchId, instance, "render", () => {
-            try { return unpatch(); }
-            catch (e) { console.error(`[${patchId}] Error in unpatch render`, e); }
-        });
-        instance.forceUpdate(() => instance.forceUpdate());
-    } catch (e) {
-        console.error(`[${patchId}] Error in reRender`, e);
-    }
 }
 
 module.exports = class BasePlugin {
@@ -276,13 +196,6 @@ module.exports = class BasePlugin {
                             this.stopAllFarming();
                             UI.showToast(`[${this.meta.name}] Consent is required to use this plugin. Disabling plugin.`, { type: "warning" });
                             setTimeout(() => Plugins.disable(this.meta.name), 0);
-                        }
-                        break;
-                    case "showQuestsButtonTitleBar":
-                        if (value) {
-                            this.patchTitleBar();
-                        } else {
-                            this.unpatchTitleBar();
                         }
                         break;
                     case "completeQuestsSequentially":
@@ -398,11 +311,6 @@ module.exports = class BasePlugin {
     startAfterConsent() {
         if (!modulesReady) return;
 
-        DOM.addStyle(this.meta.name, `.quest-button-enrollable > span[class*="iconBadge"] { background-color: var(--status-danger);}
-            .quest-button-enrolled > span[class*="iconBadge"] { background-color: var(--status-warning); }
-            .quest-button-claimable > span[class*="iconBadge"] { background-color: var(--status-positive); }
-            .quest-button svg:has(> [mask^="url(#svg-mask-panel-button)"]) { display: none; }`);
-
         if (RunningGameStore && ApplicationStreamingStore) try {
             Patcher.instead(this.meta.name, RunningGameStore, "getRunningGames", (_, _args, originalFunction) => {
                 try {
@@ -439,56 +347,6 @@ module.exports = class BasePlugin {
             });
         } catch (err) {
             console.error(`[${this.meta.name}] Failed to patch activity stores:`, err);
-        }
-
-        if (this.settings.showQuestsButtonTitleBar) {
-            this.patchTitleBar();
-        }
-
-        if (SettingsBarModule?.prototype) {
-        const settingsBarMap = new WeakMap();
-        try {
-            Patcher.after(this.meta.name, SettingsBarModule.prototype, "render", (_, _args, returnValue) => {
-                try {
-                    if (this.settings.showQuestsButtonSettingsBar && Array.isArray(returnValue?.props?.children) && typeof returnValue.props.children[0]?.props?.children === "function") {
-                        const f1 = returnValue.props.children[0]?.props?.children;
-                        returnValue.props.children[0].props.children = (e) => {
-                            try {
-                                const c1 = f1(e);
-                                if (Array.isArray(c1?.props?.children) && typeof c1.props.children[2]?.type === "function") {
-                                    const originalType = c1.props.children[2].type;
-                                    if (!settingsBarMap.has(originalType)) {
-                                        const wrapper = (props) => {
-                                            try {
-                                                const c2 = originalType(props);
-                                                if (Array.isArray(c2?.props?.children) && !hasInjectedChild(c2.props.children, AUTOQUEST_SETTINGS_BAR_KEY)) {
-                                                    c2.props.children.unshift(React.createElement(this.QuestButton, { type: "settings-bar", key: AUTOQUEST_SETTINGS_BAR_KEY }));
-                                                }
-                                                return c2;
-                                            } catch (we) {
-                                                console.error(`[${this.meta.name}] Error in SettingsBarModule wrapper`, we);
-                                                return originalType(props);
-                                            }
-                                        };
-                                        settingsBarMap.set(originalType, wrapper);
-                                    }
-                                    c1.props.children[2].type = settingsBarMap.get(originalType);
-                                }
-                                return c1;
-                            } catch (fe) {
-                                console.error(`[${this.meta.name}] Error in SettingsBarModule f1 wrapper`, fe);
-                                return f1(e);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.error(`[${this.meta.name}] Error in SettingsBarModule patch`, e);
-                }
-                return returnValue;
-            });
-        } catch (err) {
-            console.error(`[${this.meta.name}] Error patching SettingsBarModule:`, err);
-        }
         }
 
         if (QuestButtonWithKey?.length >= 2) try {
@@ -555,7 +413,6 @@ module.exports = class BasePlugin {
         QuestsStore?.removeChangeListener(this.handleUpdateQuests);
         this.stopAllFarming();
         Patcher.unpatchAll(this.meta.name);
-        this.unpatchTitleBar();
         DOM.removeStyle(this.meta.name);
     }
 
@@ -739,37 +596,6 @@ module.exports = class BasePlugin {
         /* console.log("Available quests updated:", availableQuests);
         console.log("Acceptable quests updated:", acceptableQuests);
         console.log("Completable quests updated:", completableQuests); */
-    }
-
-    patchTitleBar() {
-        if (!this.settings.showQuestsButtonTitleBar || !windowArea || typeof windowArea.cq !== "function" || !trailing) {
-            return;
-        }
-
-        this.unpatchTitleBar();
-
-        try {
-            Patcher.after(this.meta.name + "-title-bar", windowArea, "cq", (_, [props], ret) => {
-                try {
-                    if (props.windowKey?.startsWith("DISCORD_")) return ret;
-                    if (props.trailing?.props?.children && !hasInjectedChild(props.trailing.props.children, AUTOQUEST_TITLE_BAR_KEY)) {
-                        props.trailing.props.children.unshift(React.createElement(this.QuestButton, { type: "title-bar", key: AUTOQUEST_TITLE_BAR_KEY }));
-                    }
-                } catch (e) {
-                    console.error(`[${this.meta.name}] Error in patchTitleBar patch`, e);
-                }
-            });
-            reRender("." + trailing, this.meta.name + "-title-bar");
-        } catch (err) {
-            console.error(`[${this.meta.name}] Failed to patchTitleBar:`, err);
-        }
-    }
-
-    unpatchTitleBar() {
-        Patcher.unpatchAll(this.meta.name + "-title-bar");
-        if (trailing) {
-            reRender("." + trailing, this.meta.name + "-title-bar");
-        }
     }
 
     acceptQuest(quest) {
@@ -1179,65 +1005,5 @@ module.exports = class BasePlugin {
             className: "quest-button-badges",
             shrink: false
         }, ...children);
-    }
-
-    // type: "title-bar" | "settings-bar"
-    QuestButton = ({ type }) => {
-        const [state, setState] = React.useState(this.questsStatus());
-
-        const checkForNewQuests = () => {
-            setState(this.questsStatus());
-        };
-
-        React.useEffect(() => {
-            if (!QuestsStore?.addChangeListener) return;
-            QuestsStore.addChangeListener(checkForNewQuests);
-            return () => {
-                QuestsStore?.removeChangeListener(checkForNewQuests);
-            };
-        }, []);
-
-        const questIcon = getQuestIcon();
-        if (!questIcon) return null;
-
-        const className = state.enrollable ? "quest-button-enrollable" : state.enrolled ? "quest-button-enrolled" : state.claimable ? "quest-button-claimable" : "";
-        const tooltip = state.enrollable ? `${state.enrollable} Enrollable Quests` : state.enrolled ? `${state.enrolled} Enrolled Quests` : state.claimable ? `${state.claimable} Claimable Quests` : "Quests";
-        if (type === "title-bar") {
-            if (!TopBarButtonModule?.[TopBarButtonKey]) return null;
-            return React.createElement(TopBarButtonModule[TopBarButtonKey], {
-                className: className,
-                iconClassName: undefined,
-                disabled: navigateToQuestHome === undefined,
-                showBadge: state.enrollable > 0 || state.enrolled > 0 || state.claimable > 0,
-                badgePosition: "bottom",
-                icon: questIcon,
-                iconSize: 20,
-                onClick: navigateToQuestHome,
-                onContextMenu: undefined,
-                tooltip: tooltip,
-                tooltipPosition: "bottom",
-                hideOnClick: false
-            });
-        } else if (type === "settings-bar") {
-            if (!SettingsBarButton || !TopBarButtonModule?.[TopBarButtonKey]) return null;
-            return React.createElement(SettingsBarButton, {
-                tooltipText: tooltip,
-                onContextMenu: undefined,
-                onClick: navigateToQuestHome,
-                disabled: navigateToQuestHome === undefined,
-                className: "quest-button"
-            }, React.createElement(TopBarButtonModule[TopBarButtonKey], {
-                className: className,
-                iconClassName: undefined,
-                disabled: navigateToQuestHome === undefined,
-                showBadge: state.enrollable > 0 || state.enrolled > 0 || state.claimable > 0,
-                badgePosition: "bottom",
-                icon: questIcon,
-                iconSize: 20,
-                onClick: navigateToQuestHome,
-                onContextMenu: undefined,
-                hideOnClick: false
-            }));
-        }
     }
 };

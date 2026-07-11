@@ -14,7 +14,7 @@ A BetterDiscord plugin that completes Discord quests in the background with safe
 - **Sequential completion** — one quest at a time (default)
 - **Quest type filters** — video, desktop, stream, activity
 - **Reward filters** — codes, in-game, decorations, orbs, premium
-- **Optional UI** — quest button in title bar / settings bar with badges
+- **Optional UI** — quest count badges on the sidebar Quests button
 
 ## Install (manual)
 
