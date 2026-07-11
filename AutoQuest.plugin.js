@@ -1,7 +1,7 @@
 /**
  * @name AutoQuest
  * @description Complete Discord quests safely in the background with cooldowns and rate limiting.
- * @version 1.0.0
+ * @version 1.0.1
  * @author Kava4
  * @authorLink https://github.com/Kava4
  * @source https://github.com/Kava4/AutoQuest
@@ -10,6 +10,9 @@
 
 const config = {
     changelog: [
+        { title: "Bug Fix", type: "fixed", items: [
+            "Fixed duplicate quest buttons and badges appearing on every UI re-render."
+        ] },
         { title: "Initial Release", type: "added", items: [
             "AutoQuest initial release with safety-first defaults.",
             "Sequential quest completion, cooldowns, and API rate limiting.",
@@ -200,6 +203,15 @@ function getQuestIcon() {
     if (!QuestIcon || typeof QuestIcon !== "object") return undefined;
     const key = Object.keys(QuestIcon)[0];
     return key ? QuestIcon[key] : undefined;
+}
+
+const AUTOQUEST_TITLE_BAR_KEY = "autoquest-title-bar";
+const AUTOQUEST_SETTINGS_BAR_KEY = "autoquest-settings-bar";
+const AUTOQUEST_BADGES_KEY = "autoquest-quest-badges";
+
+function hasInjectedChild(children, key, className) {
+    if (!Array.isArray(children)) return false;
+    return children.some(child => child?.key === key || (className && child?.props?.className?.includes?.(className)));
 }
 
 function reRender(selector, patchId) {
@@ -449,8 +461,8 @@ module.exports = class BasePlugin {
                                         const wrapper = (props) => {
                                             try {
                                                 const c2 = originalType(props);
-                                                if (Array.isArray(c2?.props?.children)) {
-                                                    c2.props.children.unshift(React.createElement(this.QuestButton, { type: "settings-bar" }));
+                                                if (Array.isArray(c2?.props?.children) && !hasInjectedChild(c2.props.children, AUTOQUEST_SETTINGS_BAR_KEY)) {
+                                                    c2.props.children.unshift(React.createElement(this.QuestButton, { type: "settings-bar", key: AUTOQUEST_SETTINGS_BAR_KEY }));
                                                 }
                                                 return c2;
                                             } catch (we) {
@@ -492,8 +504,8 @@ module.exports = class BasePlugin {
                                 }
                             );
 
-                            if (component && Array.isArray(component.props.children)) {
-                                component.props.children.push(React.createElement(this.QuestsCount));
+                            if (component && Array.isArray(component.props.children) && !hasInjectedChild(component.props.children, AUTOQUEST_BADGES_KEY, "quest-button-badges")) {
+                                component.props.children.push(React.createElement(this.QuestsCount, { key: AUTOQUEST_BADGES_KEY }));
                             }
                         } catch (err) {
                             console.warn(`[${this.meta.name}] Might have failed to inject quests button badges:`, err);
@@ -734,12 +746,14 @@ module.exports = class BasePlugin {
             return;
         }
 
+        this.unpatchTitleBar();
+
         try {
             Patcher.after(this.meta.name + "-title-bar", windowArea, "cq", (_, [props], ret) => {
                 try {
                     if (props.windowKey?.startsWith("DISCORD_")) return ret;
-                    if (props.trailing?.props?.children) {
-                        props.trailing.props.children.unshift(React.createElement(this.QuestButton, { type: "title-bar" }));
+                    if (props.trailing?.props?.children && !hasInjectedChild(props.trailing.props.children, AUTOQUEST_TITLE_BAR_KEY)) {
+                        props.trailing.props.children.unshift(React.createElement(this.QuestButton, { type: "title-bar", key: AUTOQUEST_TITLE_BAR_KEY }));
                     }
                 } catch (e) {
                     console.error(`[${this.meta.name}] Error in patchTitleBar patch`, e);
