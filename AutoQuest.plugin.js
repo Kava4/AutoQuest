@@ -1,7 +1,7 @@
 /**
  * @name AutoQuest
  * @description Complete Discord quests safely in the background with cooldowns and rate limiting.
- * @version 1.2.4
+ * @version 1.2.5
  * @author Kava4
  * @authorLink https://github.com/Kava4
  * @source https://github.com/Kava4/AutoQuest
@@ -10,6 +10,10 @@
 
 const config = {
     changelog: [
+        { title: "v1.2.5", type: "fixed", items: [
+            "Reward claiming uses correct platform and stops spamming on captcha/400 errors.",
+            "Shows a clear message when you need to claim manually in Discord."
+        ] },
         { title: "v1.2.4", type: "fixed", items: [
             "Video progress now uses Discord's internal QUESTS_VIDEO_PROGRESS action instead of raw HTTP."
         ] },
@@ -615,6 +619,7 @@ module.exports = class BasePlugin {
 
         this.completingQuests = new Map();
         this.claimingQuests = new Set();
+        this.claimBackoffUntil = new Map();
         this.acceptingQuests = new Set();
         this.fakeGames = new Map();
         this.fakeApplications = new Map();
@@ -904,6 +909,10 @@ module.exports = class BasePlugin {
 
         if (this.claimingQuests) {
             this.claimingQuests.clear();
+        }
+
+        if (this.claimBackoffUntil) {
+            this.claimBackoffUntil.clear();
         }
 
         if (this.acceptingQuests) {
@@ -1208,21 +1217,35 @@ module.exports = class BasePlugin {
         if (this.claimingQuests.has(quest.id)) return;
         if (quest.userStatus?.claimedAt) return;
 
+        const backoffUntil = this.claimBackoffUntil?.get(quest.id) ?? 0;
+        if (Date.now() < backoffUntil) return;
+
+        const freshQuest = QuestsStore?.getQuest?.(quest.id) ?? quest;
+        if (freshQuest.userStatus?.claimedAt) return;
+
         this.claimingQuests.add(quest.id);
-        const questName = quest.config.messages.questName;
+        const questName = freshQuest.config.messages.questName;
 
         try {
             await this.apiDelay();
-            await apiPost(`/quests/${quest.id}/claim-reward`, {
-                platform: 0,
-                location: QuestLocationMap?.QUEST_HOME_DESKTOP ?? 11,
-                is_targeted: false,
-                metadata_sealed: null,
-                traffic_metadata_sealed: getTrafficMetadataSealed(quest.id),
-            });
-            console.log("Claimed reward for quest:", questName);
+            await new Promise(resolve => setTimeout(resolve, randomDelayMs(2000, 5000)));
+            const res = await apiPost(`/quests/${freshQuest.id}/claim-reward`, buildClaimRewardBody(freshQuest));
+            if (res?.body?.claimed_at || QuestsStore?.getQuest?.(freshQuest.id)?.userStatus?.claimedAt) {
+                console.log("Claimed reward for quest:", questName);
+                this.claimBackoffUntil.delete(freshQuest.id);
+            }
         } catch (err) {
-            console.warn("Failed to claim reward for quest:", questName, err);
+            if (isCaptchaClaimError(err)) {
+                console.warn(`[${this.meta.name}] Captcha required to claim "${questName}". Open Quests tab and click CLAIM manually.`);
+                UI.showToast(`[${this.meta.name}] Claim "${questName}" manually in Quests (captcha required).`, { type: "warning", forceShow: true });
+                this.claimBackoffUntil.set(freshQuest.id, Date.now() + 60 * 60 * 1000);
+            } else if (err?.status === 400) {
+                console.warn(`[${this.meta.name}] Could not auto-claim "${questName}". Open Quests tab and click CLAIM.`, err?.body ?? err);
+                this.claimBackoffUntil.set(freshQuest.id, Date.now() + 30 * 60 * 1000);
+            } else {
+                console.warn("Failed to claim reward for quest:", questName, err);
+                this.claimBackoffUntil.set(freshQuest.id, Date.now() + 5 * 60 * 1000);
+            }
         } finally {
             this.claimingQuests.delete(quest.id);
         }
