@@ -1,7 +1,7 @@
 /**
  * @name AutoQuest
  * @description Complete Discord quests safely in the background with cooldowns and rate limiting.
- * @version 1.2.5
+ * @version 1.2.6
  * @author Kava4
  * @authorLink https://github.com/Kava4
  * @source https://github.com/Kava4/AutoQuest
@@ -10,6 +10,10 @@
 
 const config = {
     changelog: [
+        { title: "v1.2.6", type: "improved", items: [
+            "Auto-claim pauses for the session after captcha is detected (orbs, codes, all rewards).",
+            "Clearer setting note: most rewards need manual CLAIM with captcha in Discord."
+        ] },
         { title: "v1.2.5", type: "fixed", items: [
             "Reward claiming uses correct platform and stops spamming on captcha/400 errors.",
             "Shows a clear message when you need to claim manually in Discord."
@@ -42,7 +46,7 @@ const config = {
         {
             type: "category", id: "general", name: "General", collapsible: false, shown: true, settings: [
                 { type: "switch", id: "acceptQuestsAutomatically", name: "Auto-accept quests", note: "Accept new quests from the Quests tab automatically.", value: true },
-                { type: "switch", id: "claimRewardsAutomatically", name: "Auto-claim rewards", note: "Claim rewards as soon as a quest finishes.", value: true },
+                { type: "switch", id: "claimRewardsAutomatically", name: "Auto-claim rewards", note: "Tries to claim when a quest finishes. Discord usually requires captcha (orbs, codes, decorations) — click CLAIM manually in Quests.", value: true },
                 { type: "switch", id: "completeQuestsSequentially", name: "One quest at a time", note: "Off = run one video + one play quest in parallel (faster). Two play quests still won't stack.", value: true },
             ]
         },
@@ -657,6 +661,8 @@ module.exports = class BasePlugin {
         this.completingQuests = new Map();
         this.claimingQuests = new Set();
         this.claimBackoffUntil = new Map();
+        this.autoClaimBlockedUntil = 0;
+        this.captchaClaimNoticeShown = false;
         this.acceptingQuests = new Set();
         this.fakeGames = new Map();
         this.fakeApplications = new Map();
@@ -951,6 +957,9 @@ module.exports = class BasePlugin {
         if (this.claimBackoffUntil) {
             this.claimBackoffUntil.clear();
         }
+
+        this.autoClaimBlockedUntil = 0;
+        this.captchaClaimNoticeShown = false;
 
         if (this.acceptingQuests) {
             this.acceptingQuests.clear();
@@ -1251,6 +1260,7 @@ module.exports = class BasePlugin {
 
     async claimQuestReward(quest) {
         if (!this.settings.claimRewardsAutomatically) return;
+        if (this.autoClaimBlockedUntil && Date.now() < this.autoClaimBlockedUntil) return;
         if (this.claimingQuests.has(quest.id)) return;
         if (quest.userStatus?.claimedAt) return;
 
@@ -1263,6 +1273,16 @@ module.exports = class BasePlugin {
         this.claimingQuests.add(quest.id);
         const questName = freshQuest.config.messages.questName;
 
+        const pauseAutoClaimForCaptcha = (reason) => {
+            this.autoClaimBlockedUntil = Date.now() + 24 * 60 * 60 * 1000;
+            this.claimBackoffUntil.set(freshQuest.id, this.autoClaimBlockedUntil);
+            if (!this.captchaClaimNoticeShown) {
+                this.captchaClaimNoticeShown = true;
+                console.warn(`[${this.meta.name}] ${reason} Auto-claim paused — use Quests tab → CLAIM (captcha).`);
+                UI.showToast(`[${this.meta.name}] Claim rewards manually in Quests (Discord captcha required).`, { type: "info", forceShow: true });
+            }
+        };
+
         try {
             await this.apiDelay();
             await new Promise(resolve => setTimeout(resolve, randomDelayMs(2000, 5000)));
@@ -1272,13 +1292,8 @@ module.exports = class BasePlugin {
                 this.claimBackoffUntil.delete(freshQuest.id);
             }
         } catch (err) {
-            if (isCaptchaClaimError(err)) {
-                console.warn(`[${this.meta.name}] Captcha required to claim "${questName}". Open Quests tab and click CLAIM manually.`);
-                UI.showToast(`[${this.meta.name}] Claim "${questName}" manually in Quests (captcha required).`, { type: "warning", forceShow: true });
-                this.claimBackoffUntil.set(freshQuest.id, Date.now() + 60 * 60 * 1000);
-            } else if (err?.status === 400) {
-                console.warn(`[${this.meta.name}] Could not auto-claim "${questName}". Open Quests tab and click CLAIM.`, err?.body ?? err);
-                this.claimBackoffUntil.set(freshQuest.id, Date.now() + 30 * 60 * 1000);
+            if (isCaptchaClaimError(err) || err?.status === 400) {
+                pauseAutoClaimForCaptcha(`Could not auto-claim "${questName}".`);
             } else {
                 console.warn("Failed to claim reward for quest:", questName, err);
                 this.claimBackoffUntil.set(freshQuest.id, Date.now() + 5 * 60 * 1000);
