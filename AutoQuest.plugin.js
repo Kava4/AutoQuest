@@ -1,7 +1,7 @@
 /**
  * @name AutoQuest
  * @description Complete Discord quests safely in the background with cooldowns and rate limiting.
- * @version 1.2.2
+ * @version 1.2.3
  * @author Kava4
  * @authorLink https://github.com/Kava4
  * @source https://github.com/Kava4/AutoQuest
@@ -10,6 +10,10 @@
 
 const config = {
     changelog: [
+        { title: "v1.2.3", type: "fixed", items: [
+            "Video quests use START_QUEST enrollment and Discord's API client (fixes 404 on video-progress).",
+            "Stopped failed video quests from instantly cycling to the next quest."
+        ] },
         { title: "v1.2.2", type: "fixed", items: [
             "Fixed infinite \"Accepting quest\" loop when parallel mode is enabled."
         ] },
@@ -337,7 +341,33 @@ async function apiFetch(method, url, body) {
     });
 }
 
+function getQuestEnrollCTA(handler) {
+    if (handler === "WATCH_VIDEO" || handler === "PLAY_ACTIVITY" || handler === "ACHIEVEMENT_IN_ACTIVITY") {
+        return "START_QUEST";
+    }
+    return "ACCEPT_QUEST";
+}
+
+async function ensureVideoQuestStarted(questId) {
+    if (!QuestApplyAction || !QuestLocationMap) return;
+    try {
+        await QuestApplyAction(questId, {
+            questContent: QuestLocationMap.QUEST_HOME_DESKTOP,
+            questContentCTA: "START_QUEST",
+            sourceQuestContent: 0,
+        });
+    } catch {}
+}
+
 async function apiPost(url, body) {
+    if (RestApi?.post) {
+        try {
+            return await RestApi.post({ url, body });
+        } catch (err) {
+            const errText = String(err?.message ?? err);
+            if (!errText.includes("toLowerCase")) throw err;
+        }
+    }
     return apiFetch("POST", url, body);
 }
 
@@ -1069,6 +1099,9 @@ module.exports = class BasePlugin {
             this.acceptingQuests.delete(quest.id);
         };
 
+        const taskInfo = getQuestTaskInfo(freshQuest);
+        const enrollCTA = getQuestEnrollCTA(taskInfo?.handler);
+
         const enrollBody = {
             location: QuestLocationMap?.QUEST_HOME_DESKTOP ?? 11,
             is_targeted: false,
@@ -1091,7 +1124,7 @@ module.exports = class BasePlugin {
 
         const action = {
             questContent: QuestLocationMap.QUEST_HOME_DESKTOP,
-            questContentCTA: "ACCEPT_QUEST",
+            questContentCTA: enrollCTA,
             sourceQuestContent: 0,
         };
         QuestApplyAction(freshQuest.id, action).then(() => {
@@ -1235,41 +1268,60 @@ module.exports = class BasePlugin {
                 case "WATCH_VIDEO":
                     let completed = false;
                     let watchVideo = async () => {
-                        while (true) {
-                            const secondsRemaining = secondsNeeded - secondsDone;
-                            const chunk = this.getVideoChunkSeconds(secondsRemaining);
-                            const timestamp = secondsDone + chunk;
+                        await ensureVideoQuestStarted(quest.id);
+                        const enrolledAt = new Date(quest.userStatus?.enrolledAt ?? Date.now()).getTime();
+                        const videoSpeed = 7;
 
+                        while (true) {
                             if (!this.settings.hasAcceptedToUsePlugin || !this.settings.farmVideos || !this.completingQuests.get(quest.id)) {
                                 console.log(`Stopping completing quest: ${questName}`);
                                 this.completingQuests.set(quest.id, false);
-                                break;
+                                return;
                             }
 
-                            await new Promise(resolve => setTimeout(resolve, this.getVideoWaitMs(chunk)));
+                            const maxAllowed = Math.floor((Date.now() - enrolledAt) / 1000) + 10;
+                            const timestamp = secondsDone + videoSpeed;
+                            if (maxAllowed - secondsDone < videoSpeed) {
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                                continue;
+                            }
+
+                            await new Promise(resolve => setTimeout(resolve, randomDelayMs(videoSpeed * 1000, (videoSpeed + 2) * 1000)));
                             let res;
                             try {
                                 res = await postWithRetry(`/quests/${quest.id}/video-progress`, {
-                                    timestamp: Math.floor(Math.min(secondsNeeded, timestamp + Math.random()))
+                                    timestamp: Number(Math.min(secondsNeeded, timestamp + Math.random()).toFixed(6)),
                                 });
                             } catch {
-                                break;
+                                this.completingQuests.set(quest.id, false);
+                                return;
                             }
-                            if (!res?.body) break;
+                            if (!res?.body) {
+                                this.completingQuests.set(quest.id, false);
+                                return;
+                            }
                             completed = res.body.completed_at != null;
-                            secondsDone = Math.min(secondsNeeded, timestamp);
+                            const serverProgress = res.body.progress?.[taskKey]?.value ?? res.body.progress?.WATCH_VIDEO?.value;
+                            secondsDone = Math.max(secondsDone, Math.min(secondsNeeded, serverProgress ?? timestamp));
 
-                            if (secondsDone >= secondsNeeded) {
+                            if (completed || secondsDone >= secondsNeeded) {
                                 break;
                             }
                         }
+
                         if (!completed) {
                             try {
-                                await postWithRetry(`/quests/${quest.id}/video-progress`, { timestamp: Math.floor(secondsNeeded) });
-                            } catch {}
-                        } else {
-                            console.log(`Quest ${questName} completed!`);
+                                await postWithRetry(`/quests/${quest.id}/video-progress`, {
+                                    timestamp: Number(secondsNeeded.toFixed(6)),
+                                });
+                                completed = true;
+                            } catch {
+                                this.completingQuests.set(quest.id, false);
+                                return;
+                            }
                         }
+
+                        console.log(`Quest ${questName} completed!`);
                         this.completingQuests.set(quest.id, false);
                         if (!this.ignoredQuests) this.ignoredQuests = new Set();
                         this.ignoredQuests.add(quest.id);
