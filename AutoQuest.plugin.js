@@ -1,7 +1,7 @@
 /**
  * @name AutoQuest
  * @description Complete Discord quests safely in the background with cooldowns and rate limiting.
- * @version 1.2.0
+ * @version 1.2.1
  * @author Kava4
  * @authorLink https://github.com/Kava4
  * @source https://github.com/Kava4/AutoQuest
@@ -10,6 +10,10 @@
 
 const config = {
     changelog: [
+        { title: "v1.2.1", type: "added", items: [
+            "Parallel mode: turn off \"One quest at a time\" to farm a video quest and a play quest together.",
+            "Cooldown no longer blocks reward claims while another quest is still running."
+        ] },
         { title: "v1.2.0", type: "fixed", items: [
             "Quest automation works again on the latest Discord update.",
             "Video, Play on Desktop, and reward claiming are fixed.",
@@ -25,7 +29,7 @@ const config = {
             type: "category", id: "general", name: "General", collapsible: false, shown: true, settings: [
                 { type: "switch", id: "acceptQuestsAutomatically", name: "Auto-accept quests", note: "Accept new quests from the Quests tab automatically.", value: true },
                 { type: "switch", id: "claimRewardsAutomatically", name: "Auto-claim rewards", note: "Claim rewards as soon as a quest finishes.", value: true },
-                { type: "switch", id: "completeQuestsSequentially", name: "One quest at a time", note: "Recommended — finish the current quest before starting another.", value: true },
+                { type: "switch", id: "completeQuestsSequentially", name: "One quest at a time", note: "Off = run one video + one play quest in parallel (faster). Two play quests still won't stack.", value: true },
             ]
         },
         {
@@ -812,6 +816,28 @@ module.exports = class BasePlugin {
         return Date.now() < this.questCooldownUntil;
     }
 
+    hasActiveCompletions() {
+        return Array.from(this.completingQuests.values()).includes(true);
+    }
+
+    getActiveHandlers() {
+        const handlers = new Set();
+        for (const [questId, active] of this.completingQuests.entries()) {
+            if (!active) continue;
+            const info = getQuestTaskInfo(QuestsStore?.getQuest?.(questId) ?? { id: questId });
+            if (info?.handler) handlers.add(info.handler);
+        }
+        return handlers;
+    }
+
+    canStartQuestHandler(handler) {
+        const active = this.getActiveHandlers();
+        if (this.settings.completeQuestsSequentially) {
+            return active.size === 0;
+        }
+        return !active.has(handler);
+    }
+
     getSafeRange(minKey, maxKey) {
         const minSetting = getSetting(minKey);
         const maxSetting = getSetting(maxKey);
@@ -822,7 +848,15 @@ module.exports = class BasePlugin {
     }
 
     scheduleNextQuestUpdate(reason = "completed") {
-        if (this.cooldownTimeout) return;
+        if (this.cooldownTimeout) {
+            this.updateQuests();
+            return;
+        }
+
+        if (!this.settings.completeQuestsSequentially && this.hasActiveCompletions()) {
+            this.updateQuests();
+            return;
+        }
 
         if (!this.settings.enableQuestCooldown) {
             this.cooldownTimeout = setTimeout(() => {
@@ -912,10 +946,11 @@ module.exports = class BasePlugin {
             return;
         }
 
-        if (this.isOnQuestCooldown()) {
+        if (this.isOnQuestCooldown() && this.settings.completeQuestsSequentially) {
             return;
         }
 
+        const onCooldown = this.isOnQuestCooldown();
         const availableQuests = [...QuestsStore.quests.values()];
         const acceptableQuests = availableQuests.filter(x => !x.userStatus?.enrolledAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
         const completableQuests = availableQuests
@@ -937,11 +972,11 @@ module.exports = class BasePlugin {
             }
         }
 
-        let isAnyQuestCompleting = Array.from(this.completingQuests.values()).includes(true);
         let hasCompletableEligible = completableQuests.some(q => this.isQuestEligibleForFarming(q));
 
         for (const quest of acceptableQuests) {
-            if (this.settings.completeQuestsSequentially && (isAnyQuestCompleting || hasCompletableEligible)) {
+            if (onCooldown) break;
+            if (this.settings.completeQuestsSequentially && (this.hasActiveCompletions() || hasCompletableEligible)) {
                 break;
             }
             if (this.isQuestEligibleForFarming(quest)) {
@@ -953,21 +988,22 @@ module.exports = class BasePlugin {
         }
 
         for (const quest of completableQuests) {
+            if (onCooldown) break;
             if (this.completingQuests.get(quest.id) === true) {
                 continue; // already completing
             }
             if (this.completingQuests.has(quest.id)) {
                 this.completingQuests.delete(quest.id);
             }
-            
-            if (this.settings.completeQuestsSequentially && isAnyQuestCompleting) {
+
+            const taskInfo = getQuestTaskInfo(quest);
+            if (!taskInfo || !this.canStartQuestHandler(taskInfo.handler)) {
                 continue;
             }
 
             if (this.isQuestEligibleForFarming(quest)) {
                 console.log("Starting to complete quest:", quest.config.messages.questName);
                 this.completeQuest(quest);
-                isAnyQuestCompleting = true;
             }
         }
 
