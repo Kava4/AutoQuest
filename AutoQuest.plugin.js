@@ -1,7 +1,7 @@
 /**
  * @name AutoQuest
  * @description Complete Discord quests safely in the background with cooldowns and rate limiting.
- * @version 1.2.3
+ * @version 1.2.4
  * @author Kava4
  * @authorLink https://github.com/Kava4
  * @source https://github.com/Kava4/AutoQuest
@@ -10,6 +10,9 @@
 
 const config = {
     changelog: [
+        { title: "v1.2.4", type: "fixed", items: [
+            "Video progress now uses Discord's internal QUESTS_VIDEO_PROGRESS action instead of raw HTTP."
+        ] },
         { title: "v1.2.3", type: "fixed", items: [
             "Video quests use START_QUEST enrollment and Discord's API client (fixes 404 on video-progress).",
             "Stopped failed video quests from instantly cycling to the next quest."
@@ -107,7 +110,7 @@ function randomIntBetween(min, max) {
     return Math.floor(randomBetween(min, max + 1));
 }
 
-const { Webpack, Data, UI, Patcher, DOM, React, Components, Utils, Plugins, Logger } = BdApi;
+const { Webpack, Data, UI, Patcher, DOM, React, Components, Utils, Plugins, Logger, Net } = BdApi;
 const { Filters } = Webpack;
 const { Tooltip, Flex } = Components;
 
@@ -119,6 +122,7 @@ let ChannelStore;
 let GuildChannelStore;
 let RestApi;
 let QuestApplyAction;
+let QuestVideoProgressAction;
 let QuestLocationMap;
 let CountBadge;
 let QuestButtonWithKey;
@@ -138,6 +142,43 @@ const isRestApiClient = (m) => m
     && typeof m.patch === "function"
     && typeof m.del === "function"
     && !m._dispatcher;
+
+function findQuestVideoProgressAction() {
+    const direct = Webpack.getByStrings('type:"QUESTS_VIDEO_PROGRESS"', { searchExports: true })
+        ?? Webpack.getByStrings(".QUESTS_VIDEO_PROGRESS(", { searchExports: true });
+    if (typeof direct === "function") return direct;
+
+    const modules = Webpack.getModules((m) => typeof m === "function" && m.toString().includes("QUESTS_VIDEO_PROGRESS"), {
+        searchExports: true,
+        first: false,
+    }) ?? [];
+
+    return modules.find(fn => fn.length >= 1 && fn.length <= 3) ?? modules[0] ?? null;
+}
+
+async function postQuestVideoProgress(questId, timestamp, taskKey) {
+    const payload = Number(timestamp);
+
+    if (QuestVideoProgressAction) {
+        try {
+            await QuestVideoProgressAction(questId, payload);
+        } catch (err) {
+            if (QuestVideoProgressAction.length !== 1) throw err;
+            await QuestVideoProgressAction({ questId, timestamp: payload });
+        }
+        const quest = QuestsStore?.getQuest?.(questId);
+        const userStatus = quest?.userStatus;
+        return {
+            body: {
+                completed_at: userStatus?.completedAt ?? null,
+                progress: userStatus?.progress ?? {},
+            },
+            status: 200,
+        };
+    }
+
+    return apiPost(`/quests/${questId}/video-progress`, { timestamp: payload });
+}
 
 function findRestApiClient() {
     const candidates = Webpack.getModules(isRestApiClient, { searchExports: true, first: false }) ?? [];
@@ -317,6 +358,31 @@ async function apiFetch(method, url, body) {
     const apiPath = normalizeApiPath(url);
     const fullUrl = `https://discord.com${apiPath}`;
 
+    if (typeof Net?.fetch === "function") {
+        try {
+            const response = await Net.fetch(fullUrl, {
+                method,
+                headers: {
+                    authorization: token,
+                    "content-type": "application/json",
+                },
+                body: body != null ? JSON.stringify(body) : undefined,
+            });
+            let responseBody = null;
+            try {
+                responseBody = await response.json();
+            } catch {
+                responseBody = null;
+            }
+            if (response.ok) {
+                return { body: responseBody, status: response.status };
+            }
+            throw { status: response.status, body: responseBody, message: response.statusText };
+        } catch (err) {
+            if (err?.status) throw err;
+        }
+    }
+
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open(method, fullUrl, true);
@@ -492,6 +558,8 @@ async function loadDiscordModules() {
 
         QuestApplyAction = Webpack.getByStrings('type:"QUESTS_ENROLL_BEGIN"', { searchExports: true })
             || Webpack.getByStrings("QUESTS_ENROLL_BEGIN", { searchExports: true });
+
+        QuestVideoProgressAction = findQuestVideoProgressAction();
 
         QuestLocationMap = Webpack.getByKeys("QUEST_HOME_DESKTOP", { searchExports: true })
             || findWebpackModule(m => m?.QUEST_HOME_DESKTOP != null);
@@ -1264,10 +1332,48 @@ module.exports = class BasePlugin {
                 }
             };
 
+            const videoProgressWithRetry = async (timestamp) => {
+                let delay = 5;
+                const maxDelay = 60;
+                while (this.completingQuests.get(quest.id)) {
+                    try {
+                        await this.apiDelay();
+                        return await postQuestVideoProgress(quest.id, timestamp, taskKey);
+                    } catch (err) {
+                        if (isAuthError(err)) {
+                            clearDiscordToken();
+                            console.error(`[${this.meta.name}] Auth failed for quest ${questName}. Switch channels once, then reload Discord.`);
+                            this.completingQuests.set(quest.id, false);
+                            this.ignoreQuest(quest.id, "auth token unavailable");
+                            throw err;
+                        }
+                        if (isSkippableQuestError(err)) {
+                            console.warn(`[${this.meta.name}] Quest unavailable (${err.status}) for ${questName}. Skipping.`);
+                            this.completingQuests.set(quest.id, false);
+                            this.ignoreQuest(quest.id, `API returned ${err.status}`);
+                            throw err;
+                        }
+                        console.warn(`Failed video progress for quest ${questName}:`, err);
+                        console.log("Retrying video progress for quest", questName, "in", delay, "seconds.");
+                        await new Promise(resolve => setTimeout(resolve, delay * 1000));
+                        delay = Math.min(delay < maxDelay ? delay * 2 : maxDelay, maxDelay);
+                    }
+                }
+            };
+
             switch (handler) {
                 case "WATCH_VIDEO":
                     let completed = false;
                     let watchVideo = async () => {
+                        if (!QuestVideoProgressAction) {
+                            QuestVideoProgressAction = findQuestVideoProgressAction();
+                        }
+                        if (!QuestVideoProgressAction) {
+                            console.warn(`[${this.meta.name}] Discord video module not found for ${questName}. Reload Discord and try again.`);
+                            this.completingQuests.set(quest.id, false);
+                            return;
+                        }
+
                         await ensureVideoQuestStarted(quest.id);
                         const enrolledAt = new Date(quest.userStatus?.enrolledAt ?? Date.now()).getTime();
                         const videoSpeed = 7;
@@ -1289,9 +1395,9 @@ module.exports = class BasePlugin {
                             await new Promise(resolve => setTimeout(resolve, randomDelayMs(videoSpeed * 1000, (videoSpeed + 2) * 1000)));
                             let res;
                             try {
-                                res = await postWithRetry(`/quests/${quest.id}/video-progress`, {
-                                    timestamp: Number(Math.min(secondsNeeded, timestamp + Math.random()).toFixed(6)),
-                                });
+                                res = await videoProgressWithRetry(
+                                    Number(Math.min(secondsNeeded, timestamp + Math.random()).toFixed(6))
+                                );
                             } catch {
                                 this.completingQuests.set(quest.id, false);
                                 return;
@@ -1301,7 +1407,11 @@ module.exports = class BasePlugin {
                                 return;
                             }
                             completed = res.body.completed_at != null;
-                            const serverProgress = res.body.progress?.[taskKey]?.value ?? res.body.progress?.WATCH_VIDEO?.value;
+                            const freshStatus = QuestsStore?.getQuest?.(quest.id)?.userStatus;
+                            if (freshStatus?.completedAt) completed = true;
+                            const serverProgress = freshStatus?.progress?.[taskKey]?.value
+                                ?? res.body.progress?.[taskKey]?.value
+                                ?? res.body.progress?.WATCH_VIDEO?.value;
                             secondsDone = Math.max(secondsDone, Math.min(secondsNeeded, serverProgress ?? timestamp));
 
                             if (completed || secondsDone >= secondsNeeded) {
@@ -1311,9 +1421,7 @@ module.exports = class BasePlugin {
 
                         if (!completed) {
                             try {
-                                await postWithRetry(`/quests/${quest.id}/video-progress`, {
-                                    timestamp: Number(secondsNeeded.toFixed(6)),
-                                });
+                                await videoProgressWithRetry(Number(secondsNeeded.toFixed(6)));
                                 completed = true;
                             } catch {
                                 this.completingQuests.set(quest.id, false);
