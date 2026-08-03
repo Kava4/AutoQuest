@@ -326,6 +326,43 @@ function getTrafficMetadataSealed(questId) {
     }
 }
 
+function getQuestMetadataSealed(questId) {
+    try {
+        const quest = QuestsStore?.getQuest?.(questId);
+        return quest?.metadataSealed ?? quest?.config?.metadataSealed ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function getClaimRewardPlatform(quest) {
+    const reward = quest?.config?.rewardsConfig?.rewards?.[0];
+    const platforms = quest?.config?.rewardsConfig?.platforms;
+    if (!Array.isArray(platforms) || platforms.length === 0) return 0;
+
+    if (reward?.type === 2) {
+        if (platforms.includes(4)) return 4;
+        if (platforms.includes(0)) return 0;
+        return platforms[0];
+    }
+
+    return platforms.includes(0) ? 0 : platforms[0];
+}
+
+function buildClaimRewardBody(quest) {
+    return {
+        platform: getClaimRewardPlatform(quest),
+        location: QuestLocationMap?.QUEST_HOME_DESKTOP ?? 11,
+        metadata_sealed: getQuestMetadataSealed(quest.id),
+        traffic_metadata_sealed: getTrafficMetadataSealed(quest.id),
+    };
+}
+
+function isCaptchaClaimError(err) {
+    const body = err?.body;
+    return !!(body?.captcha_key || body?.captcha_sitekey || body?.captcha_service);
+}
+
 function isDesktopClient() {
     return typeof DiscordNative !== "undefined";
 }
