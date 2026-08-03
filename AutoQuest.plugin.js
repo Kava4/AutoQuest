@@ -1,7 +1,7 @@
 /**
  * @name AutoQuest
  * @description Complete Discord quests safely in the background with cooldowns and rate limiting.
- * @version 1.0.2
+ * @version 1.2.0
  * @author Kava4
  * @authorLink https://github.com/Kava4
  * @source https://github.com/Kava4/AutoQuest
@@ -10,68 +10,74 @@
 
 const config = {
     changelog: [
-        { title: "UI", type: "improved", items: [
-            "Removed custom quest buttons from title bar and settings bar."
+        { title: "v1.2.0", type: "fixed", items: [
+            "Quest automation works again on the latest Discord update.",
+            "Video, Play on Desktop, and reward claiming are fixed.",
+            "Mobile-only video quests are skipped automatically on desktop.",
+            "Cleaner settings panel and simplified option names."
         ] },
-        { title: "Bug Fix", type: "fixed", items: [
-            "Fixed duplicate quest buttons and badges appearing on every UI re-render."
-        ] },
-        { title: "Initial Release", type: "added", items: [
-            "AutoQuest initial release with safety-first defaults.",
-            "Sequential quest completion, cooldowns, and API rate limiting.",
-            "Configurable Safety & Timing settings.",
-            "Safer module loading to prevent Discord UI crashes."
+        { title: "v1.0.0", type: "added", items: [
+            "Initial release with safety defaults, cooldowns, and quest filters."
         ] },
     ],
     settings: [
-        { type: "switch", id: "acceptQuestsAutomatically", name: "Accept Quests Automatically", note: "Whether to accept available quests automatically.", value: false },
-        { type: "switch", id: "hasAcceptedToUsePlugin", name: "Issue Consent", note: "Set by the warning popup. If disabled, quest completion will not run.", value: false },
-        { type: "switch", id: "completeQuestsSequentially", name: "Complete Quests Sequentially", note: "Whether to complete quests one at a time.", value: true, disabled: false },
         {
-            type: "category", id: "safetyTiming", name: "Safety & Timing", collapsible: true, shown: true, settings: [
-                { type: "switch", id: "enableQuestCooldown", name: "Quest Cooldown", note: "Wait between finishing one quest and starting the next.", value: true },
-                { type: "slider", id: "questCooldownMinMinutes", name: "Cooldown Min (minutes)", note: "Minimum wait between quests.", value: 10, min: 0, max: 120, markers: [0, 10, 30, 60, 120] },
-                { type: "slider", id: "questCooldownMaxMinutes", name: "Cooldown Max (minutes)", note: "Maximum wait between quests.", value: 30, min: 0, max: 180, markers: [0, 15, 30, 60, 120, 180] },
-                { type: "switch", id: "enableApiDelay", name: "API Call Delay", note: "Add a random pause before each quest API request.", value: true },
-                { type: "slider", id: "apiDelayMinSeconds", name: "API Delay Min (seconds)", note: "Minimum random delay before API calls.", value: 1, min: 0, max: 30, markers: [0, 1, 5, 15, 30] },
-                { type: "slider", id: "apiDelayMaxSeconds", name: "API Delay Max (seconds)", note: "Maximum random delay before API calls.", value: 8, min: 0, max: 60, markers: [0, 5, 15, 30, 60] },
-                { type: "slider", id: "videoChunkMinSeconds", name: "Video Chunk Min (seconds)", note: "Smallest video progress step per update.", value: 2, min: 1, max: 15, markers: [1, 2, 5, 10, 15] },
-                { type: "slider", id: "videoChunkMaxSeconds", name: "Video Chunk Max (seconds)", note: "Largest video progress step per update.", value: 4, min: 1, max: 20, markers: [1, 4, 7, 10, 20] },
-                { type: "slider", id: "videoSlowdownMinPercent", name: "Video Slowdown Min (%)", note: "Minimum extra wait vs realtime (120 = 1.2× slower).", value: 120, min: 100, max: 300, markers: [100, 120, 150, 200, 300] },
-                { type: "slider", id: "videoSlowdownMaxPercent", name: "Video Slowdown Max (%)", note: "Maximum extra wait vs realtime (160 = 1.6× slower).", value: 160, min: 100, max: 400, markers: [100, 160, 200, 300, 400] },
-                { type: "slider", id: "videoExtraJitterMaxSeconds", name: "Video Extra Jitter (seconds)", note: "Up to this many extra random seconds per video update.", value: 3, min: 0, max: 15, markers: [0, 3, 5, 10, 15] },
-                { type: "slider", id: "heartbeatMinSeconds", name: "Activity Heartbeat Min (seconds)", note: "Minimum wait between activity quest heartbeats.", value: 18, min: 10, max: 120, markers: [10, 18, 30, 60, 120] },
-                { type: "slider", id: "heartbeatMaxSeconds", name: "Activity Heartbeat Max (seconds)", note: "Maximum wait between activity quest heartbeats.", value: 28, min: 10, max: 180, markers: [10, 28, 60, 120, 180] },
+            type: "category", id: "general", name: "General", collapsible: false, shown: true, settings: [
+                { type: "switch", id: "acceptQuestsAutomatically", name: "Auto-accept quests", note: "Accept new quests from the Quests tab automatically.", value: true },
+                { type: "switch", id: "claimRewardsAutomatically", name: "Auto-claim rewards", note: "Claim rewards as soon as a quest finishes.", value: true },
+                { type: "switch", id: "completeQuestsSequentially", name: "One quest at a time", note: "Recommended — finish the current quest before starting another.", value: true },
             ]
         },
         {
-            type: "category", id: "uiElements", name: "UI Elements", collapsible: true, shown: false, settings: [
-                { type: "switch", id: "showQuestsButtonBadges", name: "Show Quests Badges", note: "Whether to show badges on the sidebar Quests button.", value: true },
+            type: "category", id: "questTypes", name: "Quest types", collapsible: true, shown: true, settings: [
+                { type: "switch", id: "farmVideos", name: "Watch video", note: "\"Watch X seconds\" quests — fastest (~30–60 sec).", value: true },
+                { type: "switch", id: "farmPlayOnDesktop", name: "Play game", note: "\"Play for X minutes\" quests — slower (~15 min).", value: true },
+                { type: "switch", id: "farmStreamOnDesktop", name: "Go Live / Stream", note: "Streaming quests — you must be in a voice channel.", value: true },
+                { type: "switch", id: "farmPlayActivity", name: "Activities", note: "In-app activity quests (e.g. Poker, Chess).", value: true },
             ]
         },
         {
-            type: "category", id: "questTypeFilters", name: "Quest Type Filters", collapsible: true, shown: false, settings: [
-                { type: "switch", id: "farmVideos", name: "Videos", note: "Whether to farm video quests automatically.", value: true },
-                { type: "switch", id: "farmPlayOnDesktop", name: "Play On Desktop", note: "Whether to farm desktop games quests automatically.", value: true },
-                { type: "switch", id: "farmStreamOnDesktop", name: "Streaming", note: "Whether to farm streaming quests automatically.", value: true },
-                { type: "switch", id: "farmPlayActivity", name: "Activities", note: "Whether to farm activities quests automatically.", value: true },
+            type: "category", id: "rewards", name: "Rewards to farm", collapsible: true, shown: true, settings: [
+                { type: "switch", id: "farmRewardCodes", name: "Game codes & keys", note: "Steam keys and similar reward codes.", value: true },
+                { type: "switch", id: "farmInGame", name: "In-game items", note: "Rewards delivered inside a game.", value: true },
+                { type: "switch", id: "farmCollectibles", name: "Profile decorations", note: "Avatars, nameplates, and profile effects.", value: true },
+                { type: "switch", id: "farmVirtualCurrency", name: "Orbs", note: "Discord Orbs currency.", value: true },
+                { type: "switch", id: "farmFractionalPremium", name: "Nitro trial", note: "Fractional Nitro / premium time rewards.", value: true },
             ]
         },
         {
-            type: "category", id: "questRewardsFilters", name: "Quest Rewards Filters", collapsible: true, shown: false, settings: [
-                { type: "switch", id: "farmRewardCodes", name: "Reward Codes", note: "Whether to farm reward codes automatically.", value: true },
-                { type: "switch", id: "farmInGame", name: "In Game (Quests)", note: "Whether to farm in-game quests automatically.", value: true },
-                { type: "switch", id: "farmCollectibles", name: "Collectibles (Decorations)", note: "Whether to farm discord user appearance decorations automatically.", value: true },
-                { type: "switch", id: "farmVirtualCurrency", name: "Virtual Currency (Orbs)", note: "Whether to farm orbs automatically.", value: true },
-                { type: "switch", id: "farmFractionalPremium", name: "Fractional Premium", note: "Whether to farm fractional premium automatically.", value: true },
+            type: "category", id: "safety", name: "Safety", collapsible: true, shown: true, settings: [
+                { type: "switch", id: "enableQuestCooldown", name: "Pause between quests", note: "Wait a random time after each quest before starting the next.", value: true },
+                { type: "slider", id: "questCooldownMinMinutes", name: "Min pause (minutes)", note: "Shortest wait between quests.", value: 10, min: 0, max: 120, markers: [0, 10, 30, 60, 120] },
+                { type: "slider", id: "questCooldownMaxMinutes", name: "Max pause (minutes)", note: "Longest wait between quests.", value: 30, min: 0, max: 180, markers: [0, 15, 30, 60, 120, 180] },
+                { type: "switch", id: "enableApiDelay", name: "Slow down API calls", note: "Adds a small random delay before each Discord API request.", value: true },
+                { type: "slider", id: "apiDelayMinSeconds", name: "Min API delay (seconds)", note: "Minimum random delay before API calls.", value: 1, min: 0, max: 30, markers: [0, 1, 5, 15, 30] },
+                { type: "slider", id: "apiDelayMaxSeconds", name: "Max API delay (seconds)", note: "Maximum random delay before API calls.", value: 8, min: 0, max: 60, markers: [0, 5, 15, 30, 60] },
             ]
         },
-        { type: "dropdown", id: "questMenuFilter", name: "Quest Menu Filter", note: "The filter to use in the quest menu.", value: "recently_enrolled", options: [
-            { label: "Suggested", value: "suggested" },
-            { label: "Most Recent", value: "most_recent" },
-            { label: "Expiring Soon", value: "expiring_soon" },
-            { label: "Started", value: "recently_enrolled" },
-        ]},
+        {
+            type: "category", id: "advanced", name: "Advanced", collapsible: true, shown: false, settings: [
+                { type: "slider", id: "videoChunkMinSeconds", name: "Video step min (seconds)", note: "Smallest progress jump per video update.", value: 2, min: 1, max: 15, markers: [1, 2, 5, 10, 15] },
+                { type: "slider", id: "videoChunkMaxSeconds", name: "Video step max (seconds)", note: "Largest progress jump per video update.", value: 4, min: 1, max: 20, markers: [1, 4, 7, 10, 20] },
+                { type: "slider", id: "videoSlowdownMinPercent", name: "Video speed min (%)", note: "100 = realtime, 120 = 20% slower than the video.", value: 120, min: 100, max: 300, markers: [100, 120, 150, 200, 300] },
+                { type: "slider", id: "videoSlowdownMaxPercent", name: "Video speed max (%)", note: "Upper bound for how slowly video progress is sent.", value: 160, min: 100, max: 400, markers: [100, 160, 200, 300, 400] },
+                { type: "slider", id: "videoExtraJitterMaxSeconds", name: "Video extra wait (seconds)", note: "Up to this many extra random seconds per video update.", value: 3, min: 0, max: 15, markers: [0, 3, 5, 10, 15] },
+                { type: "slider", id: "heartbeatMinSeconds", name: "Activity heartbeat min (seconds)", note: "Minimum wait between activity quest heartbeats.", value: 18, min: 10, max: 120, markers: [10, 18, 30, 60, 120] },
+                { type: "slider", id: "heartbeatMaxSeconds", name: "Activity heartbeat max (seconds)", note: "Maximum wait between activity quest heartbeats.", value: 28, min: 10, max: 180, markers: [10, 28, 60, 120, 180] },
+                { type: "switch", id: "showQuestsButtonBadges", name: "Quest count badges", note: "Show completable/claimable counts on the sidebar Quests button.", value: true },
+                { type: "dropdown", id: "questMenuFilter", name: "Quests tab filter", note: "Default sort filter when opening the Quests menu.", value: "recently_enrolled", options: [
+                    { label: "Suggested", value: "suggested" },
+                    { label: "Most Recent", value: "most_recent" },
+                    { label: "Expiring Soon", value: "expiring_soon" },
+                    { label: "Started", value: "recently_enrolled" },
+                ]},
+            ]
+        },
+        {
+            type: "category", id: "internal", name: "Internal", collapsible: false, shown: false, settings: [
+                { type: "switch", id: "hasAcceptedToUsePlugin", name: "Risk consent", note: "Set by the warning popup on first run.", value: false },
+            ]
+        },
     ]
 };
 function getSetting(key) {
@@ -109,35 +115,366 @@ let SortingFilterWithKey;
 let modulesLoaded = false;
 let modulesReady = false;
 
-function loadDiscordModules() {
-    if (modulesLoaded) return modulesReady;
-    modulesLoaded = true;
+const isFluxDispatcher = (m) => m?._subscriptions
+    && typeof m.subscribe === "function"
+    && typeof m.dispatch === "function"
+    && typeof m.__proto__?.flushWaitQueue === "function";
+
+const isRestApiClient = (m) => m
+    && typeof m.get === "function"
+    && typeof m.post === "function"
+    && typeof m.put === "function"
+    && typeof m.patch === "function"
+    && typeof m.del === "function"
+    && !m._dispatcher;
+
+function findRestApiClient() {
+    const candidates = Webpack.getModules(isRestApiClient, { searchExports: true, first: false }) ?? [];
+    if (!candidates.length) {
+        const loose = Webpack.getModules((m) => isRestApiClient(m) || (
+            m && typeof m.get === "function" && typeof m.post === "function"
+            && typeof m.del === "function" && !m._dispatcher
+        ), { searchExports: true, first: false }) ?? [];
+        candidates.push(...loose);
+    }
+
+    return candidates.find(m => m.post.toString().includes("url"))
+        ?? candidates[0]
+        ?? null;
+}
+
+function normalizeApiPath(url) {
+    if (typeof url !== "string") return "";
+    return url.startsWith("/api/") ? url : `/api/v9${url}`;
+}
+
+let cachedAuthToken = null;
+let authSnifferInstalled = false;
+
+function installAuthSniffer() {
+    if (authSnifferInstalled) return;
+    authSnifferInstalled = true;
+
+    const originalSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+    XMLHttpRequest.prototype.setRequestHeader = function (header, value) {
+        if (typeof header === "string" && header.toLowerCase() === "authorization"
+            && typeof value === "string" && value.length > 20) {
+            cachedAuthToken = value;
+        }
+        return originalSetHeader.call(this, header, value);
+    };
+}
+
+function getDiscordToken() {
+    if (cachedAuthToken) return cachedAuthToken;
+
+    const tokenModule = Webpack.getModule(m => typeof m?.getToken === "function", { searchExports: true })
+        ?? Webpack.getModule(m => typeof m?.default?.getToken === "function", { searchExports: true });
+    try {
+        const token = tokenModule?.getToken?.() ?? tokenModule?.default?.getToken?.();
+        if (typeof token === "string" && token.length > 20) {
+            cachedAuthToken = token;
+            return cachedAuthToken;
+        }
+    } catch {}
+
+    const authHeaderModule = Webpack.getModule(m => typeof m?.getAuthorizationHeader === "function", { searchExports: true });
+    try {
+        const header = authHeaderModule?.getAuthorizationHeader?.();
+        if (typeof header === "string" && header.length > 20) {
+            cachedAuthToken = header;
+            return cachedAuthToken;
+        }
+    } catch {}
 
     try {
-        [DiscordModules, ApplicationStreamingStore, RunningGameStore, QuestsStore,
-            ChannelStore, GuildChannelStore, RestApi, QuestApplyAction, QuestLocationMap,
-            CountBadge] = Webpack.getBulk(
-                { filter: Filters.byKeys("subscribe", "dispatch"), searchExports: true },
-                { filter: Filters.byStoreName("ApplicationStreamingStore") },
-                { filter: Filters.byStoreName("RunningGameStore") },
-                { filter: Filters.byKeys("getQuest") },
-                { filter: Filters.byStoreName("ChannelStore") },
-                { filter: Filters.byStoreName("GuildChannelStore") },
-                { filter: m => typeof m === "object" && m.del && m.put, searchExports: true },
-                { filter: Filters.byStrings("type:\"QUESTS_ENROLL_BEGIN\""), searchExports: true },
-                { filter: Filters.byKeys("QUEST_HOME_DESKTOP", "11"), searchExports: true },
-                { filter: Filters.byStrings("renderBadgeCount", "disableColor"), searchExports: true }
-            ) ?? [];
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        document.body.appendChild(iframe);
+        const raw = iframe.contentWindow?.localStorage?.getItem("token");
+        document.body.removeChild(iframe);
+        if (raw) {
+            const token = JSON.parse(raw);
+            if (typeof token === "string" && token.length > 20) {
+                cachedAuthToken = token;
+                return cachedAuthToken;
+            }
+        }
+    } catch {}
 
-        QuestButtonWithKey = [...(Webpack.getWithKey(Filters.byStrings("focusProps:", "interactiveClassName:")) ?? [])];
-        SortingFilterWithKey = [...(Webpack.getWithKey(Filters.byStrings("selectedSortMethod", "onChange", "radioBarClassName"), { searchExports: true }) ?? [])];
+    return null;
+}
 
-        modulesReady = !!(QuestsStore?.quests && RestApi?.post && DiscordModules?.dispatch);
+function clearDiscordToken() {
+    cachedAuthToken = null;
+}
+
+async function ensureDiscordToken(maxAttempts = 6, delayMs = 500) {
+    installAuthSniffer();
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const token = getDiscordToken();
+        if (token) return token;
+        if (attempt < maxAttempts - 1) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+    return null;
+}
+
+function buildFakeGame(applicationId, gameName, pid, appData) {
+    const name = appData?.name ?? gameName;
+    const exeName = appData?.executables?.find(x => x.os === "win32")?.name?.replace(">", "")
+        ?? `${name.replace(/[\/\\:*?"<>|]/g, "")}.exe`;
+    return {
+        cmdLine: `C:\\Program Files\\${name}\\${exeName}`,
+        exeName,
+        exePath: `c:/program files/${name.toLowerCase()}/${exeName}`,
+        hidden: false,
+        isLauncher: false,
+        id: applicationId,
+        name,
+        pid,
+        pidPath: [pid],
+        processName: name,
+        start: Date.now(),
+    };
+}
+
+async function fetchApplicationData(applicationId) {
+    const url = `/applications/public?application_ids=${applicationId}`;
+    try {
+        const res = await apiGet(url);
+        return res?.body?.[0] ?? null;
+    } catch (err) {
+        if (!isAuthError(err)) throw err;
+        clearDiscordToken();
+        await ensureDiscordToken(4, 400);
+        const res = await apiGet(url);
+        return res?.body?.[0] ?? null;
+    }
+}
+
+function isAuthError(err) {
+    return err?.status === 401 || err?.status === 403;
+}
+
+function isSkippableQuestError(err) {
+    return err?.status === 404 || err?.status === 403 || err?.status === 410;
+}
+
+function getTrafficMetadataSealed(questId) {
+    try {
+        return QuestsStore?.getQuest?.(questId)?.trafficMetadataSealed ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function isDesktopClient() {
+    return typeof DiscordNative !== "undefined";
+}
+
+function isMobileVideoQuest(taskInfo) {
+    return taskInfo?.taskKey === "WATCH_VIDEO_ON_MOBILE";
+}
+
+function getQuestPriority(quest) {
+    const taskInfo = getQuestTaskInfo(quest);
+    if (!taskInfo) return 1000;
+    if (taskInfo.taskKey === "WATCH_VIDEO") return 0;
+    if (isMobileVideoQuest(taskInfo)) return 200;
+    if (taskInfo.handler === "WATCH_VIDEO") return 10;
+    if (taskInfo.handler === "PLAY_ON_DESKTOP") return 20;
+    if (taskInfo.handler === "PLAY_ACTIVITY") return 30;
+    if (taskInfo.handler === "STREAM_ON_DESKTOP") return 40;
+    return 100;
+}
+
+async function apiFetch(method, url, body) {
+    installAuthSniffer();
+    let token = getDiscordToken();
+    if (!token) {
+        token = await ensureDiscordToken();
+    }
+    if (!token) {
+        return Promise.reject({
+            status: 401,
+            message: "Discord auth token not available. Switch channels once and retry.",
+        });
+    }
+
+    const apiPath = normalizeApiPath(url);
+    const fullUrl = `https://discord.com${apiPath}`;
+
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(method, fullUrl, true);
+        xhr.setRequestHeader("authorization", token);
+        if (body != null) xhr.setRequestHeader("content-type", "application/json");
+        xhr.onload = () => {
+            let responseBody = null;
+            try {
+                responseBody = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+            } catch {
+                responseBody = xhr.responseText;
+            }
+
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve({ body: responseBody, status: xhr.status });
+            } else {
+                reject({ status: xhr.status, body: responseBody, message: xhr.statusText });
+            }
+        };
+        xhr.onerror = () => reject(new Error("XHR network error"));
+        xhr.send(body != null ? JSON.stringify(body) : null);
+    });
+}
+
+async function apiPost(url, body) {
+    return apiFetch("POST", url, body);
+}
+
+async function apiGet(url) {
+    return apiFetch("GET", url);
+}
+
+const isQuestsStore = (m) => m?.getQuest && m?.quests instanceof Map;
+
+const QUEST_TASK_ORDER = [
+    { match: (key) => key === "ACHIEVEMENT_IN_ACTIVITY", handler: "ACHIEVEMENT_IN_ACTIVITY" },
+    { match: (key) => key === "PLAY_ACTIVITY", handler: "PLAY_ACTIVITY" },
+    { match: (key) => key.startsWith("STREAM"), handler: "STREAM_ON_DESKTOP" },
+    { match: (key) => key.includes("VIDEO"), handler: "WATCH_VIDEO" },
+    { match: (key) => key.startsWith("PLAY"), handler: "PLAY_ON_DESKTOP" },
+];
+
+function getAppIdForTask(taskConfig, taskKey, legacyAppId) {
+    return taskConfig?.tasks?.[taskKey]?.applications?.[0]?.id ?? legacyAppId ?? null;
+}
+
+function getQuestTaskInfo(quest) {
+    const freshQuest = QuestsStore?.getQuest?.(quest?.id) ?? quest;
+    const config = freshQuest?.config;
+    const taskConfig = config?.taskConfig ?? config?.taskConfigV2;
+    if (!taskConfig?.tasks || typeof taskConfig.tasks !== "object") return null;
+
+    const legacyAppId = config?.application?.id ?? null;
+    const taskKeys = Object.keys(taskConfig.tasks);
+
+    for (const { match, handler } of QUEST_TASK_ORDER) {
+        const taskKey = taskKeys.find(match);
+        if (!taskKey) continue;
+
+        const task = taskConfig.tasks[taskKey];
+        const target = task?.target ?? 0;
+        const appId = getAppIdForTask(taskConfig, taskKey, legacyAppId);
+        const applicationName = config?.application?.name
+            ?? task?.applications?.[0]?.name
+            ?? config?.messages?.questName
+            ?? freshQuest.id;
+
+        return {
+            quest: freshQuest,
+            taskKey,
+            handler,
+            target,
+            appId,
+            applicationName,
+            configVersion: config?.configVersion,
+        };
+    }
+
+    return null;
+}
+
+function getQuestProgress(userStatus, taskKey, configVersion) {
+    if (configVersion === 1) return userStatus?.streamProgressSeconds ?? 0;
+    const progressEntry = userStatus?.progress?.[taskKey];
+    return Math.floor(progressEntry?.value ?? 0);
+}
+
+function findWebpackModule(filter, options = { searchExports: true }) {
+    return Webpack.getModule(filter, options);
+}
+
+function waitForWebpackModule(filter, options = { searchExports: true }, timeoutMs = 30000) {
+    const existing = findWebpackModule(filter, options);
+    if (existing) return Promise.resolve(existing);
+
+    return new Promise((resolve, reject) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => {
+            controller.abort();
+            reject(new Error("Timed out waiting for Discord module"));
+        }, timeoutMs);
+
+        Webpack.waitForModule(filter, { ...options, signal: controller.signal })
+            .then((module) => {
+                clearTimeout(timeout);
+                resolve(module);
+            })
+            .catch((err) => {
+                clearTimeout(timeout);
+                reject(err);
+            });
+    });
+}
+
+function loadOptionalUiModules() {
+    QuestButtonWithKey = [...(Webpack.getWithKey(Filters.byStrings("focusProps:", "interactiveClassName:")) ?? [])];
+    SortingFilterWithKey = [...(Webpack.getWithKey(Filters.byStrings("selectedSortMethod", "onChange", "radioBarClassName"), { searchExports: true }) ?? [])];
+    CountBadge = CountBadge
+        || Webpack.getByStrings("renderBadgeCount", "disableColor", { searchExports: true });
+}
+
+async function loadDiscordModules() {
+    try {
+        QuestsStore = Webpack.getStore("QuestStore")
+            || Webpack.getStore("QuestsStore")
+            || findWebpackModule(isQuestsStore)
+            || Webpack.getByKeys("getQuest", "quests", { searchExports: true });
+
+        RunningGameStore = Webpack.getStore("RunningGameStore")
+            || findWebpackModule(Filters.byStoreName("RunningGameStore"));
+
+        ApplicationStreamingStore = Webpack.getStore("ApplicationStreamingStore")
+            || findWebpackModule(Filters.byStoreName("ApplicationStreamingStore"));
+
+        ChannelStore = Webpack.getStore("ChannelStore")
+            || findWebpackModule(Filters.byStoreName("ChannelStore"));
+
+        GuildChannelStore = Webpack.getStore("GuildChannelStore")
+            || findWebpackModule(Filters.byStoreName("GuildChannelStore"));
+
+        DiscordModules = findWebpackModule(isFluxDispatcher)
+            || await waitForWebpackModule(isFluxDispatcher).catch(() => null);
+
+        RestApi = findRestApiClient()
+            || findWebpackModule(isRestApiClient)
+            || await waitForWebpackModule(isRestApiClient).catch(() => null);
+
+        QuestApplyAction = Webpack.getByStrings('type:"QUESTS_ENROLL_BEGIN"', { searchExports: true })
+            || Webpack.getByStrings("QUESTS_ENROLL_BEGIN", { searchExports: true });
+
+        QuestLocationMap = Webpack.getByKeys("QUEST_HOME_DESKTOP", { searchExports: true })
+            || findWebpackModule(m => m?.QUEST_HOME_DESKTOP != null);
+
+        CountBadge = Webpack.getByStrings("renderBadgeCount", "disableColor", { searchExports: true });
+        loadOptionalUiModules();
+
+        modulesReady = !!(QuestsStore?.quests && DiscordModules?.dispatch);
+        modulesLoaded = modulesReady;
+
         if (!modulesReady) {
-            Logger.error("AutoQuest", "Core Discord modules missing. Quest farming disabled.");
+            Logger.error("AutoQuest", "Core Discord modules missing.", {
+                QuestsStore: !!QuestsStore,
+                RestApi: !!RestApi,
+                DiscordModules: !!DiscordModules
+            });
         }
     } catch (err) {
         modulesReady = false;
+        modulesLoaded = false;
         Logger.error("AutoQuest", "Failed to load Discord modules", err);
     }
 
@@ -169,6 +506,7 @@ module.exports = class BasePlugin {
         this.handleUpdateQuests = this.updateQuests.bind(this);
 
         this.completingQuests = new Map();
+        this.claimingQuests = new Set();
         this.fakeGames = new Map();
         this.fakeApplications = new Map();
         this.questCooldownUntil = 0;
@@ -285,11 +623,22 @@ module.exports = class BasePlugin {
     start() {
         this.initSettings();
         this.showChangelog();
+        this.loadAndStart();
+    }
 
-        if (!loadDiscordModules()) {
-            UI.showToast(`[${this.meta.name}] Discord modules not found. Plugin disabled.`, { type: "error", forceShow: true });
-            setTimeout(() => Plugins.disable(this.meta.name), 0);
-            return;
+    async loadAndStart() {
+        const maxAttempts = 10;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            if (await loadDiscordModules()) break;
+
+            if (attempt === maxAttempts - 1) {
+                UI.showToast(`[${this.meta.name}] Discord modules not found. Plugin disabled.`, { type: "error", forceShow: true });
+                setTimeout(() => Plugins.disable(this.meta.name), 0);
+                return;
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
         this.ensureHasAcceptedToUsePlugin().then(hasConsent => {
@@ -310,6 +659,13 @@ module.exports = class BasePlugin {
 
     startAfterConsent() {
         if (!modulesReady) return;
+
+        installAuthSniffer();
+        ensureDiscordToken().then(token => {
+            if (!token) {
+                UI.showToast(`[${this.meta.name}] Switch channels once if quests fail to start.`, { type: "info" });
+            }
+        });
 
         if (RunningGameStore && ApplicationStreamingStore) try {
             Patcher.instead(this.meta.name, RunningGameStore, "getRunningGames", (_, _args, originalFunction) => {
@@ -376,7 +732,7 @@ module.exports = class BasePlugin {
             console.error(`[${this.meta.name}] Failed to patch QuestButtonWithKey:`, err);
         }
 
-        if (SortingFilterWithKey?.length >= 2) {
+        if (SortingFilterWithKey?.length >= 2 && typeof SortingFilterWithKey[1] === "string") {
         let lastOnChange = null;
         try {
             Patcher.instead(this.meta.name, SortingFilterWithKey[0], SortingFilterWithKey[1], (_, args, originalFunction) => {
@@ -407,6 +763,7 @@ module.exports = class BasePlugin {
         }
 
         QuestsStore?.addChangeListener(this.handleUpdateQuests);
+        this.updateQuests();
     }
 
     stop() {
@@ -414,6 +771,8 @@ module.exports = class BasePlugin {
         this.stopAllFarming();
         Patcher.unpatchAll(this.meta.name);
         DOM.removeStyle(this.meta.name);
+        modulesLoaded = false;
+        modulesReady = false;
     }
 
     stopAllFarming() {
@@ -432,6 +791,10 @@ module.exports = class BasePlugin {
 
         if (this.ignoredQuests) {
             this.ignoredQuests.clear();
+        }
+
+        if (this.claimingQuests) {
+            this.claimingQuests.clear();
         }
 
         this.clearQuestCooldown();
@@ -507,16 +870,27 @@ module.exports = class BasePlugin {
         return randomDelayMs(minSeconds * 1000, maxSeconds * 1000);
     }
 
+    ignoreQuest(questId, reason) {
+        if (!this.ignoredQuests) this.ignoredQuests = new Set();
+        this.ignoredQuests.add(questId);
+        console.warn(`[${this.meta.name}] Ignoring quest ${questId}: ${reason}`);
+    }
+
     isQuestEligibleForFarming(quest) {
         if (this.ignoredQuests && this.ignoredQuests.has(quest.id)) return false;
 
-        const questConfig = quest.config.taskConfig || quest.config.taskConfigV2;
-        if (!Object.keys(questConfig.tasks).some(taskName => {
-            return ((taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") && this.settings.farmVideos
-                || taskName === "PLAY_ON_DESKTOP" && this.settings.farmPlayOnDesktop
-                || taskName === "STREAM_ON_DESKTOP" && this.settings.farmStreamOnDesktop
-                || taskName === "PLAY_ACTIVITY" && this.settings.farmPlayActivity);
-        })) return false;
+        const taskInfo = getQuestTaskInfo(quest);
+        if (!taskInfo) return false;
+
+        const { handler } = taskInfo;
+        if (isDesktopClient() && isMobileVideoQuest(taskInfo)) return false;
+
+        const supported = (handler === "WATCH_VIDEO" && this.settings.farmVideos)
+            || (handler === "PLAY_ON_DESKTOP" && this.settings.farmPlayOnDesktop)
+            || (handler === "STREAM_ON_DESKTOP" && this.settings.farmStreamOnDesktop)
+            || (handler === "PLAY_ACTIVITY" && this.settings.farmPlayActivity);
+
+        if (!supported || handler === "ACHIEVEMENT_IN_ACTIVITY") return false;
 
         const rewards = quest.config?.rewardsConfig?.rewards || [];
         if (!Array.isArray(rewards) || rewards.length === 0) return false;
@@ -544,9 +918,12 @@ module.exports = class BasePlugin {
 
         const availableQuests = [...QuestsStore.quests.values()];
         const acceptableQuests = availableQuests.filter(x => !x.userStatus?.enrolledAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
-        const completableQuests = availableQuests.filter(x => x.userStatus?.enrolledAt && !x.userStatus?.completedAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
+        const completableQuests = availableQuests
+            .filter(x => x.userStatus?.enrolledAt && !x.userStatus?.completedAt && new Date(x.config.expiresAt).getTime() > Date.now())
+            .sort((a, b) => getQuestPriority(a) - getQuestPriority(b)) || [];
+        const claimableQuests = availableQuests.filter(x => x.userStatus?.completedAt && !x.userStatus?.claimedAt && new Date(x.config.expiresAt).getTime() > Date.now()) || [];
         
-        const logString = `Quests available: ${availableQuests.length} Acceptable: ${acceptableQuests.length} Completable: ${completableQuests.length}`;
+        const logString = `Quests available: ${availableQuests.length} Acceptable: ${acceptableQuests.length} Completable: ${completableQuests.length} Claimable: ${claimableQuests.length}`;
         if (this.lastLogString !== logString) {
             console.log("Updating quests to complete...");
             console.log(logString);
@@ -593,24 +970,80 @@ module.exports = class BasePlugin {
                 isAnyQuestCompleting = true;
             }
         }
+
+        for (const quest of claimableQuests) {
+            if (this.isQuestEligibleForFarming(quest)) {
+                this.claimQuestReward(quest);
+            }
+        }
         /* console.log("Available quests updated:", availableQuests);
         console.log("Acceptable quests updated:", acceptableQuests);
         console.log("Completable quests updated:", completableQuests); */
     }
 
     acceptQuest(quest) {
-        if (!this.settings.acceptQuestsAutomatically || !QuestApplyAction || !QuestLocationMap) return;
-        console.log("Accepting quest:", quest.config.messages.questName);
+        if (!this.settings.acceptQuestsAutomatically) return;
+
+        const questName = quest.config.messages.questName;
+        console.log("Accepting quest:", questName);
+
+        const enrollBody = {
+            location: QuestLocationMap?.QUEST_HOME_DESKTOP ?? 11,
+            is_targeted: false,
+            metadata_sealed: null,
+            traffic_metadata_sealed: getTrafficMetadataSealed(quest.id),
+        };
+
+        const enrollViaApi = () => apiPost(`/quests/${quest.id}/enroll`, enrollBody).then(() => {
+            console.log("Accepted quest:", questName);
+            this.updateQuests();
+        });
+
+        if (!QuestApplyAction || !QuestLocationMap) {
+            enrollViaApi().catch(err => {
+                console.error("Failed to accept quest:", questName, err);
+            });
+            return;
+        }
+
         const action = {
             questContent: QuestLocationMap.QUEST_HOME_DESKTOP,
             questContentCTA: "ACCEPT_QUEST",
             sourceQuestContent: 0,
         };
         QuestApplyAction(quest.id, action).then(() => {
-            console.log("Accepted quest:", quest.config.messages.questName);
-        }).catch(err => {
-            console.error("Failed to accept quest:", quest.config.messages.questName, err);
+            console.log("Accepted quest:", questName);
+            this.updateQuests();
+        }).catch(() => {
+            enrollViaApi().catch(err => {
+                console.error("Failed to accept quest:", questName, err);
+            });
         });
+    }
+
+    async claimQuestReward(quest) {
+        if (!this.settings.claimRewardsAutomatically) return;
+        if (this.claimingQuests.has(quest.id)) return;
+        if (quest.userStatus?.claimedAt) return;
+
+        this.claimingQuests.add(quest.id);
+        const questName = quest.config.messages.questName;
+
+        try {
+            await this.apiDelay();
+            await apiPost(`/quests/${quest.id}/claim-reward`, {
+                platform: 0,
+                location: QuestLocationMap?.QUEST_HOME_DESKTOP ?? 11,
+                is_targeted: false,
+                metadata_sealed: null,
+                traffic_metadata_sealed: getTrafficMetadataSealed(quest.id),
+            });
+            console.log("Claimed reward for quest:", questName);
+        } catch (err) {
+            console.warn("Failed to claim reward for quest:", questName, err);
+        } finally {
+            this.claimingQuests.delete(quest.id);
+        }
     }
 
     stopCompletingAll() {
@@ -633,62 +1066,92 @@ module.exports = class BasePlugin {
             return;
         }
 
-        let isApp = typeof DiscordNative !== "undefined";
-        if (!quest) {
-            console.log("You don't have any uncompleted quests!");
-        } else {
-            const pid = Math.floor(Math.random() * 30000) + 1000;
-
-            const applicationId = quest.config.application.id;
-            const applicationName = quest.config.application.name;
-            const questName = quest.config.messages.questName;
-            const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
-            const taskName = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"].find(x => taskConfig.tasks[x] != null);
-            const secondsNeeded = taskConfig.tasks[taskName]?.target ?? undefined;
-            let secondsDone = quest.userStatus?.progress?.[taskName]?.value ?? 0;
-
-            if (taskName === undefined) {
-                console.error("Unknown task name for quest. Cannot complete quest:", questName);
+        try {
+            const taskInfo = getQuestTaskInfo(quest);
+            if (!taskInfo) {
+                this.ignoreQuest(quest.id, "invalid or unknown task config");
                 return;
             }
 
-            if (secondsNeeded === undefined) {
-                console.error("Unknown seconds needed for quest task. Cannot complete quest:", questName, "with task", taskName);
+            const {
+                quest: freshQuest,
+                taskKey,
+                handler,
+                target: secondsNeeded,
+                appId: applicationId,
+                applicationName,
+                configVersion,
+            } = taskInfo;
+
+            quest = freshQuest;
+            const questName = quest.config?.messages?.questName ?? quest.id;
+            let secondsDone = quest.userStatus?.progress?.[taskKey]?.value ?? 0;
+            const isApp = typeof DiscordNative !== "undefined";
+
+            if (handler === "ACHIEVEMENT_IN_ACTIVITY") {
+                this.ignoreQuest(quest.id, "ACHIEVEMENT_IN_ACTIVITY is not supported yet");
                 return;
             }
 
-            if (!isApp && taskName !== "WATCH_VIDEO" && taskName !== "WATCH_VIDEO_ON_MOBILE") {
+            if (!secondsNeeded || secondsNeeded <= 0) {
+                this.ignoreQuest(quest.id, `invalid target (${secondsNeeded})`);
+                return;
+            }
+
+            if ((handler === "PLAY_ON_DESKTOP" || handler === "STREAM_ON_DESKTOP") && !applicationId) {
+                this.ignoreQuest(quest.id, "missing application id for game/stream quest");
+                return;
+            }
+
+            if (!isApp && handler === "WATCH_VIDEO") {
+                // video quests still work in browser
+            } else if (!isApp) {
                 console.log("This no longer works in browser for non-video quests. Use the discord desktop app to complete the", questName, "quest!");
+                this.ignoreQuest(quest.id, "requires desktop app");
+                return;
+            }
+
+            if (handler === "WATCH_VIDEO" && isMobileVideoQuest(taskInfo) && isDesktopClient()) {
+                this.ignoreQuest(quest.id, "WATCH_VIDEO_ON_MOBILE is not supported on desktop");
                 return;
             }
 
             this.completingQuests.set(quest.id, true);
+            console.log(`Completing quest ${questName} (${quest.id}) - ${taskKey} for ${secondsNeeded} seconds.`);
 
-            console.log(`Completing quest ${questName} (${quest.id}) - ${taskName} for ${secondsNeeded} seconds.`);
+            const pid = Math.floor(Math.random() * 30000) + 1000;
 
             const postWithRetry = async (url, body) => {
                 let delay = 5;
-                const maxDelay = 300;
+                const maxDelay = 60;
                 while (this.completingQuests.get(quest.id)) {
                     try {
                         await this.apiDelay();
-                        return await RestApi.post({ url, body });
+                        return await apiPost(url, body);
                     } catch (err) {
+                        if (isAuthError(err)) {
+                            clearDiscordToken();
+                            console.error(`[${this.meta.name}] Auth failed for quest ${questName}. Switch channels once, then reload Discord.`);
+                            this.completingQuests.set(quest.id, false);
+                            this.ignoreQuest(quest.id, "auth token unavailable");
+                            throw err;
+                        }
+                        if (isSkippableQuestError(err)) {
+                            console.warn(`[${this.meta.name}] Quest unavailable (${err.status}) for ${questName}. Skipping.`);
+                            this.completingQuests.set(quest.id, false);
+                            this.ignoreQuest(quest.id, `API returned ${err.status}`);
+                            throw err;
+                        }
                         console.warn(`Failed to POST to ${url} for quest ${questName}:`, err);
                         console.log("Retrying to POST for quest", questName, "in", delay, "seconds.");
                         await new Promise(resolve => setTimeout(resolve, delay * 1000));
-                        if (delay < maxDelay) {
-                            delay = Math.min(delay * 2, maxDelay);
-                        } else {
-                            delay = maxDelay;
-                        }
+                        delay = Math.min(delay < maxDelay ? delay * 2 : maxDelay, maxDelay);
                     }
                 }
             };
 
-            switch (taskName) {
+            switch (handler) {
                 case "WATCH_VIDEO":
-                case "WATCH_VIDEO_ON_MOBILE":
                     let completed = false;
                     let watchVideo = async () => {
                         while (true) {
@@ -703,7 +1166,15 @@ module.exports = class BasePlugin {
                             }
 
                             await new Promise(resolve => setTimeout(resolve, this.getVideoWaitMs(chunk)));
-                            const res = await postWithRetry(`/quests/${quest.id}/video-progress`, { timestamp: Math.min(secondsNeeded, timestamp + Math.random()) });
+                            let res;
+                            try {
+                                res = await postWithRetry(`/quests/${quest.id}/video-progress`, {
+                                    timestamp: Math.floor(Math.min(secondsNeeded, timestamp + Math.random()))
+                                });
+                            } catch {
+                                break;
+                            }
+                            if (!res?.body) break;
                             completed = res.body.completed_at != null;
                             secondsDone = Math.min(secondsNeeded, timestamp);
 
@@ -712,7 +1183,9 @@ module.exports = class BasePlugin {
                             }
                         }
                         if (!completed) {
-                            await postWithRetry(`/quests/${quest.id}/video-progress`, { timestamp: secondsNeeded });
+                            try {
+                                await postWithRetry(`/quests/${quest.id}/video-progress`, { timestamp: Math.floor(secondsNeeded) });
+                            } catch {}
                         } else {
                             console.log(`Quest ${questName} completed!`);
                         }
@@ -721,28 +1194,31 @@ module.exports = class BasePlugin {
                         this.ignoredQuests.add(quest.id);
                         this.scheduleNextQuestUpdate("completed");
                     }
-                    watchVideo();
+                    watchVideo().catch(err => {
+                        if (!isAuthError(err)) {
+                            console.error(`[${this.meta.name}] Video quest failed for ${questName}:`, err);
+                        }
+                        this.completingQuests.set(quest.id, false);
+                    });
                     console.log(`Spoofing video for ${questName}.`);
                     break;
 
                 case "PLAY_ON_DESKTOP":
-                    this.apiDelay().then(() => RestApi.get({ url: `/applications/public?application_ids=${applicationId}` })).then(res => {
-                        const appData = res.body[0];
-                        const exeName = appData.executables?.find(x => x.os === "win32")?.name?.replace(">","") ?? appData.name.replace(/[\/\\:*?"<>|]/g, "");
+                    (async () => {
+                        await this.apiDelay();
+                        let appData = null;
+                        try {
+                            appData = await fetchApplicationData(applicationId);
+                        } catch (err) {
+                            if (isAuthError(err)) {
+                                console.warn(`[${this.meta.name}] Auth not ready for ${questName}. Will retry on next update.`);
+                                this.completingQuests.set(quest.id, false);
+                                return;
+                            }
+                            console.warn(`[${this.meta.name}] Using fallback app data for ${questName}:`, err);
+                        }
 
-                        const fakeGame = {
-                            cmdLine: `C:\\Program Files\\${appData.name}\\${exeName}`,
-                            exeName,
-                            exePath: `c:/program files/${appData.name.toLowerCase()}/${exeName}`,
-                            hidden: false,
-                            isLauncher: false,
-                            id: applicationId,
-                            name: appData.name,
-                            pid: pid,
-                            pidPath: [pid],
-                            processName: appData.name,
-                            start: Date.now(),
-                        };
+                        const fakeGame = buildFakeGame(applicationId, applicationName, pid, appData);
                         const realGames = this.fakeGames.size == 0 ? RunningGameStore.getRunningGames() : [];
                         this.fakeGames.set(quest.id, fakeGame);
                         const fakeGames = Array.from(this.fakeGames.values());
@@ -752,7 +1228,7 @@ module.exports = class BasePlugin {
                         let playOnDesktop = (event) => {
                             if (event.questId !== quest.id) return;
                             lastUpdate = Date.now();
-                            let progress = quest.config.configVersion === 1 ? event.userStatus.streamProgressSeconds : Math.floor(event.userStatus.progress.PLAY_ON_DESKTOP.value);
+                            let progress = getQuestProgress(event.userStatus, taskKey, configVersion);
                             console.log(`Quest progress ${questName}: ${progress}/${secondsNeeded}`);
 
                             if (!this.settings.hasAcceptedToUsePlugin || !this.settings.farmPlayOnDesktop || !this.completingQuests.get(quest.id)) {
@@ -802,7 +1278,10 @@ module.exports = class BasePlugin {
                         }, 60000);
 
                         console.log(`Spoofed your game to ${applicationName}. Wait for ${Math.ceil((secondsNeeded - secondsDone) / 60)} more minutes.`);
-                    })
+                    })().catch(err => {
+                        console.error(`Failed to start PLAY_ON_DESKTOP for quest ${questName}:`, err);
+                        this.completingQuests.set(quest.id, false);
+                    });
                     break;
 
                 case "STREAM_ON_DESKTOP":
@@ -818,7 +1297,7 @@ module.exports = class BasePlugin {
                     let streamOnDesktop = (event) => {
                         if (event.questId !== quest.id) return;
                         lastStreamUpdate = Date.now();
-                        let progress = quest.config.configVersion === 1 ? event.userStatus.streamProgressSeconds : Math.floor(event.userStatus.progress.STREAM_ON_DESKTOP.value);
+                        let progress = getQuestProgress(event.userStatus, taskKey, configVersion);
                         console.log(`Quest progress ${questName}: ${progress}/${secondsNeeded}`);
 
                         if (!this.settings.hasAcceptedToUsePlugin || !this.settings.farmStreamOnDesktop || !this.completingQuests.get(quest.id)) {
@@ -862,16 +1341,22 @@ module.exports = class BasePlugin {
                     console.log("Remember that you need at least 1 other person to be in the vc!");
                     break;
 
-                case "PLAY_ACTIVITY":
-                    const channelId = ChannelStore.getSortedPrivateChannels()[0]?.id ?? Object.values(GuildChannelStore.getAllGuilds()).find(x => x != null && x.VOCAL.length > 0).VOCAL[0].channel.id;
+                case "PLAY_ACTIVITY": {
+                    const guildWithVoice = Object.values(GuildChannelStore.getAllGuilds()).find(x => x?.VOCAL?.length > 0);
+                    const channelId = ChannelStore.getSortedPrivateChannels()[0]?.id ?? guildWithVoice?.VOCAL?.[0]?.channel?.id;
+                    if (!channelId) {
+                        this.completingQuests.set(quest.id, false);
+                        this.ignoreQuest(quest.id, "no voice channel available for activity quest");
+                        break;
+                    }
                     const streamKey = `call:${channelId}:1`;
 
                     let playActivity = async () => {
-                        console.log("Completing quest", questName, "-", quest.config.messages.questName);
+                        console.log("Completing quest", questName);
 
                         while (true) {
                             const res = await postWithRetry(`/quests/${quest.id}/heartbeat`, { stream_key: streamKey, terminal: false });
-                            const progress = res.body.progress.PLAY_ACTIVITY.value;
+                            const progress = res.body.progress?.[taskKey]?.value ?? res.body.progress?.PLAY_ACTIVITY?.value ?? 0;
                             console.log(`Quest progress ${questName}: ${progress}/${secondsNeeded}`);
 
                             await new Promise(resolve => setTimeout(resolve, this.getHeartbeatIntervalMs()));
@@ -896,12 +1381,17 @@ module.exports = class BasePlugin {
                     }
                     playActivity();
                     break;
+                }
 
                 default:
-                    console.error("Unknown task type:", taskName);
+                    this.ignoreQuest(quest.id, `unsupported handler ${handler}`);
                     this.completingQuests.set(quest.id, false);
                     break;
             }
+        } catch (err) {
+            console.error(`[${this.meta.name}] Failed to complete quest:`, quest?.config?.messages?.questName ?? quest?.id, err);
+            this.completingQuests.set(quest?.id, false);
+            if (quest?.id) this.ignoreQuest(quest.id, err?.message ?? "unexpected error");
         }
     }
 

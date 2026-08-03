@@ -10,56 +10,39 @@ A BetterDiscord plugin that completes Discord quests in the background with safe
 
 ## Features
 
-- **Safety & Timing** — cooldown between quests, API delays, slower video progress (all configurable)
-- **Sequential completion** — one quest at a time (default)
-- **Quest type filters** — video, desktop, stream, activity
-- **Reward filters** — codes, in-game, decorations, orbs, premium
-- **Optional UI** — quest count badges on the sidebar Quests button
+- **Auto-accept & auto-claim** — enroll and claim rewards without clicking
+- **Quest types** — video (fast), play game (~15 min), stream, activities
+- **Reward filters** — codes, in-game items, decorations, orbs, Nitro trial
+- **Safety** — one quest at a time, random pauses between quests, API throttling
+- **Discord update resilient** — works with latest `taskConfigV2` quest format
 
-## Install (manual)
+## Install
 
 1. Download [`AutoQuest.plugin.js`](https://raw.githubusercontent.com/Kava4/AutoQuest/main/AutoQuest.plugin.js)
 2. Copy to `%AppData%/BetterDiscord/plugins/`
-3. Enable in BetterDiscord → Settings → Plugins
+3. Enable in BetterDiscord → Settings → Plugins → AutoQuest
+4. Accept the risk warning on first run
 
-Or install via link (after repo is public):
+Or install via link:
 
 ```
 https://betterdiscord.app/ghdl?url=https://raw.githubusercontent.com/Kava4/AutoQuest/main/AutoQuest.plugin.js
 ```
 
-## Releases & updates
+## Settings overview
 
-BetterDiscord uses the `@updateUrl` in the plugin header for automatic updates. No custom updater needed.
+| Section | What it does |
+|---------|----------------|
+| **General** | Auto-accept, auto-claim, one quest at a time |
+| **Quest types** | Which quest kinds to farm (video is fastest) |
+| **Rewards to farm** | Only complete quests that give rewards you want |
+| **Safety** | Pause between quests and API slowdown (keep enabled) |
+| **Advanced** | Fine-tune video speed and activity timing (optional) |
 
-### How to publish a new version
+## Updates
 
-1. Edit `AutoQuest.plugin.js` and bump `@version` (e.g. `1.0.0` → `1.0.1`)
-2. Add changelog entry in the `config.changelog` array inside the file
-3. Commit and push to `main` on GitHub
-4. (Optional) Create a GitHub Release tagged `v1.0.1` and attach `AutoQuest.plugin.js`
-
-Users get updates when BetterDiscord checks `@updateUrl` on startup/reload.
-
-### Repo structure
-
-```
-AutoQuest/
-├── AutoQuest.plugin.js   ← must match @updateUrl path
-└── README.md
-```
-
-The raw URL must stay in sync:
+BetterDiscord checks `@updateUrl` in the plugin header on reload. Bump `@version`, update the changelog in the file, and push to `main`.
 
 ```
 https://raw.githubusercontent.com/Kava4/AutoQuest/main/AutoQuest.plugin.js
 ```
-
-## Submit to betterdiscord.app (official store)
-
-1. Push plugin to a **public** GitHub repo
-2. Go to [betterdiscord.app](https://betterdiscord.app) → **Connect** (Discord + GitHub)
-3. Plugins → **+ Submit a Plugin**
-4. Wait for review (can take days to weeks)
-
-**Note:** Official submission has strict [guidelines](https://docs.betterdiscord.app/plugins/publishing/guidelines). Plugins that automate quests may be **denied** due to account risk. GitHub + `@updateUrl` distribution works without store approval.
