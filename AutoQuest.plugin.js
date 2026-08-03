@@ -1,7 +1,7 @@
 /**
  * @name AutoQuest
  * @description Complete Discord quests safely in the background with cooldowns and rate limiting.
- * @version 1.2.1
+ * @version 1.2.2
  * @author Kava4
  * @authorLink https://github.com/Kava4
  * @source https://github.com/Kava4/AutoQuest
@@ -10,6 +10,9 @@
 
 const config = {
     changelog: [
+        { title: "v1.2.2", type: "fixed", items: [
+            "Fixed infinite \"Accepting quest\" loop when parallel mode is enabled."
+        ] },
         { title: "v1.2.1", type: "added", items: [
             "Parallel mode: turn off \"One quest at a time\" to farm a video quest and a play quest together.",
             "Cooldown no longer blocks reward claims while another quest is still running."
@@ -507,10 +510,14 @@ module.exports = class BasePlugin {
             }
         });
 
-        this.handleUpdateQuests = this.updateQuests.bind(this);
+        this.handleUpdateQuests = () => {
+            if (this.updateQuestsDebounce) clearTimeout(this.updateQuestsDebounce);
+            this.updateQuestsDebounce = setTimeout(() => this.updateQuests(), 400);
+        };
 
         this.completingQuests = new Map();
         this.claimingQuests = new Set();
+        this.acceptingQuests = new Set();
         this.fakeGames = new Map();
         this.fakeApplications = new Map();
         this.questCooldownUntil = 0;
@@ -801,6 +808,15 @@ module.exports = class BasePlugin {
             this.claimingQuests.clear();
         }
 
+        if (this.acceptingQuests) {
+            this.acceptingQuests.clear();
+        }
+
+        if (this.updateQuestsDebounce) {
+            clearTimeout(this.updateQuestsDebounce);
+            this.updateQuestsDebounce = null;
+        }
+
         this.clearQuestCooldown();
     }
 
@@ -910,6 +926,15 @@ module.exports = class BasePlugin {
         console.warn(`[${this.meta.name}] Ignoring quest ${questId}: ${reason}`);
     }
 
+    getEnrolledHandlers(quests) {
+        const handlers = new Set();
+        for (const quest of quests) {
+            const info = getQuestTaskInfo(quest);
+            if (info?.handler) handlers.add(info.handler);
+        }
+        return handlers;
+    }
+
     isQuestEligibleForFarming(quest) {
         if (this.ignoredQuests && this.ignoredQuests.has(quest.id)) return false;
 
@@ -973,17 +998,29 @@ module.exports = class BasePlugin {
         }
 
         let hasCompletableEligible = completableQuests.some(q => this.isQuestEligibleForFarming(q));
+        const maxAccepts = this.settings.completeQuestsSequentially ? 1 : 2;
+        let acceptsThisPass = 0;
+        const enrolledHandlers = this.getEnrolledHandlers(completableQuests);
 
         for (const quest of acceptableQuests) {
-            if (onCooldown) break;
+            if (onCooldown || acceptsThisPass >= maxAccepts) break;
             if (this.settings.completeQuestsSequentially && (this.hasActiveCompletions() || hasCompletableEligible)) {
                 break;
             }
-            if (this.isQuestEligibleForFarming(quest)) {
-                this.acceptQuest(quest);
-                if (this.settings.completeQuestsSequentially) {
-                    hasCompletableEligible = true;
-                }
+            if (!this.isQuestEligibleForFarming(quest)) continue;
+            if (this.acceptingQuests.has(quest.id)) continue;
+
+            const taskInfo = getQuestTaskInfo(quest);
+            if (!taskInfo) continue;
+            if (!this.settings.completeQuestsSequentially && enrolledHandlers.has(taskInfo.handler)) {
+                continue;
+            }
+
+            this.acceptQuest(quest);
+            acceptsThisPass++;
+            enrolledHandlers.add(taskInfo.handler);
+            if (this.settings.completeQuestsSequentially) {
+                hasCompletableEligible = true;
             }
         }
 
@@ -1019,26 +1056,36 @@ module.exports = class BasePlugin {
 
     acceptQuest(quest) {
         if (!this.settings.acceptQuestsAutomatically) return;
+        if (this.acceptingQuests.has(quest.id)) return;
 
-        const questName = quest.config.messages.questName;
+        const freshQuest = QuestsStore?.getQuest?.(quest.id) ?? quest;
+        if (freshQuest.userStatus?.enrolledAt) return;
+
+        this.acceptingQuests.add(quest.id);
+        const questName = freshQuest.config.messages.questName;
         console.log("Accepting quest:", questName);
+
+        const finishAccept = () => {
+            this.acceptingQuests.delete(quest.id);
+        };
 
         const enrollBody = {
             location: QuestLocationMap?.QUEST_HOME_DESKTOP ?? 11,
             is_targeted: false,
             metadata_sealed: null,
-            traffic_metadata_sealed: getTrafficMetadataSealed(quest.id),
+            traffic_metadata_sealed: getTrafficMetadataSealed(freshQuest.id),
         };
 
-        const enrollViaApi = () => apiPost(`/quests/${quest.id}/enroll`, enrollBody).then(() => {
+        const enrollViaApi = () => apiPost(`/quests/${freshQuest.id}/enroll`, enrollBody).then(() => {
             console.log("Accepted quest:", questName);
-            this.updateQuests();
+            finishAccept();
+        }).catch(err => {
+            finishAccept();
+            console.error("Failed to accept quest:", questName, err);
         });
 
         if (!QuestApplyAction || !QuestLocationMap) {
-            enrollViaApi().catch(err => {
-                console.error("Failed to accept quest:", questName, err);
-            });
+            enrollViaApi();
             return;
         }
 
@@ -1047,13 +1094,11 @@ module.exports = class BasePlugin {
             questContentCTA: "ACCEPT_QUEST",
             sourceQuestContent: 0,
         };
-        QuestApplyAction(quest.id, action).then(() => {
+        QuestApplyAction(freshQuest.id, action).then(() => {
             console.log("Accepted quest:", questName);
-            this.updateQuests();
+            finishAccept();
         }).catch(() => {
-            enrollViaApi().catch(err => {
-                console.error("Failed to accept quest:", questName, err);
-            });
+            enrollViaApi();
         });
     }
 
